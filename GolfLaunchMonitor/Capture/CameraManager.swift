@@ -305,12 +305,12 @@ final class CameraManager: ObservableObject {
     /// smeared one — the centroid estimator can average out sensor noise, but
     /// it cannot un-smear a 33 mm streak.
     func lockExposure(targetShutter denominator: Int = 2000) async {
-        guard let device else { return }
+        guard let captureDevice = device else { return }
         // AVCaptureDevice is not Sendable, and Swift 6 cannot see that every
         // access to it is serialised onto sessionQueue. That invariant is real
         // and enforced by construction, so we assert it here rather than
         // dropping the whole target to minimal concurrency checking.
-        nonisolated(unsafe) let device = device
+        nonisolated(unsafe) let device = captureDevice
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             sessionQueue.async { [weak self] in
                 guard let self else { cont.resume(); return }
@@ -402,8 +402,8 @@ final class CameraManager: ObservableObject {
     /// then lock. The LiDAR distance is used for *scale*, which is the thing it
     /// is actually good for. Claiming otherwise would be hand-waving.
     func lockFocus(atNormalizedPoint point: CGPoint) async {
-        guard let device else { return }
-        nonisolated(unsafe) let device = device
+        guard let captureDevice = device else { return }
+        nonisolated(unsafe) let device = captureDevice
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             sessionQueue.async {
                 guard (try? device.lockForConfiguration()) != nil else { cont.resume(); return }
