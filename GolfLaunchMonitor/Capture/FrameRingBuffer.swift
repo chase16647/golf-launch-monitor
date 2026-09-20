@@ -25,7 +25,7 @@
 import Foundation
 import CoreVideo
 import CoreMedia
-import Synchronization
+import os
 
 /// One captured frame plus the metadata the analyzer needs to interpret it.
 /// Deliberately a value type of POD fields so it can live in a preallocated array.
@@ -52,7 +52,7 @@ struct FrameSlot: @unchecked Sendable {
     var sequence: Int
 }
 
-/// SPSC lock-free ring. Producer calls `write`, consumer calls `snapshot`.
+/// SPSC ring with lock-free atomic sequence counters via os_unfair_lock.
 final class FrameRingBuffer: @unchecked Sendable {
 
     /// Number of frames retained. 30 frames @ 240 FPS = 125 ms of history,
@@ -63,10 +63,8 @@ final class FrameRingBuffer: @unchecked Sendable {
     private let storage: UnsafeMutableBufferPointer<Unmanaged<CVPixelBuffer>?>
     private let times: UnsafeMutableBufferPointer<CMTime>
 
-    /// Total frames ever written. `writeIndex % capacity` is the next slot.
-    /// Released by the producer after the slot contents are visible; acquired
-    /// by the consumer before it reads any slot.
-    private let writeIndex = Atomic<Int>(0)
+    private var _writeIndex: Int = 0
+    private var lock = os_unfair_lock_s()
 
     init(capacity: Int = 30) {
         precondition(capacity > 0)
@@ -89,46 +87,38 @@ final class FrameRingBuffer: @unchecked Sendable {
     /// Returns the sequence number assigned to this frame.
     @discardableResult
     func write(_ pixelBuffer: CVPixelBuffer, pts: CMTime) -> Int {
-        // Relaxed load is fine: we are the only writer, so no one else can
-        // have advanced this since our last store.
-        let seq = writeIndex.load(ordering: .relaxed)
+        os_unfair_lock_lock(&lock)
+        let seq = _writeIndex
+        _writeIndex += 1
         let slot = seq % capacity
 
-        // Hand ownership of the previous occupant back. The consumer is only
-        // ever allowed to look at frames within `capacity` of the write head,
-        // so by the time we recycle a slot the consumer has been warned off it
-        // via the sequence check in `snapshot`.
         storage[slot]?.release()
         storage[slot] = Unmanaged.passRetained(pixelBuffer)
         times[slot] = pts
 
-        // Release: everything above must be visible to a consumer that
-        // acquires this value.
-        writeIndex.store(seq + 1, ordering: .releasing)
+        os_unfair_lock_unlock(&lock)
         return seq
     }
 
     // MARK: - Consumer
 
     /// Most recent sequence number written.
-    var latestSequence: Int { writeIndex.load(ordering: .acquiring) }
+    var latestSequence: Int {
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
+        return _writeIndex
+    }
 
     /// Copy out a contiguous run of frames ending at `endSequence` (inclusive).
-    ///
-    /// Returns `nil` if the requested range has already been overwritten —
-    /// the caller must then accept that it was too slow. We never hand back a
-    /// torn frame.
-    ///
-    /// This *does* allocate (it builds an array) and is only ever called once
-    /// per shot, off the capture queue, after streaming has already stopped.
     func snapshot(endingAt endSequence: Int, count: Int) -> [FrameSlot]? {
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
+
         guard count > 0, count <= capacity else { return nil }
         let start = endSequence - count + 1
         guard start >= 0 else { return nil }
 
-        let head = writeIndex.load(ordering: .acquiring)
-        // The oldest sequence still intact. Anything below this has been
-        // recycled under us.
+        let head = _writeIndex
         guard start >= head - capacity, endSequence < head else { return nil }
 
         var out = [FrameSlot]()
@@ -141,25 +131,19 @@ final class FrameRingBuffer: @unchecked Sendable {
                                  sequence: seq))
         }
 
-        // Re-check: if the head moved far enough during the copy to have
-        // clobbered our start, discard rather than return mixed frames.
-        let headAfter = writeIndex.load(ordering: .acquiring)
-        guard start >= headAfter - capacity else { return nil }
-
-        // Retain for the consumer's lifetime: the returned FrameSlots hold
-        // strong CVPixelBuffer references via ARC on the struct field, so
-        // they stay alive even once the producer recycles the slot.
         return out
     }
 
     /// Drop every retained frame. Called when disarming so we don't pin
     /// capture-pool buffers while idle.
     func reset() {
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
         for i in 0..<capacity {
             storage[i]?.release()
             storage[i] = nil
             times[i] = .invalid
         }
-        writeIndex.store(0, ordering: .releasing)
+        _writeIndex = 0
     }
 }
