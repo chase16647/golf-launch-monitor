@@ -1,0 +1,81 @@
+# XcodeGen spec.
+#
+# Deliberately NOT a hand-written .xcodeproj/project.pbxproj. A pbxproj is a
+# 1000-line file of UUID cross-references that fails to open if a single one is
+# wrong, and it cannot be verified without a Mac. This spec generates a correct
+# one in a second:
+#
+#     brew install xcodegen
+#     cd <this folder>
+#     xcodegen generate
+#     open GolfLaunchMonitor.xcodeproj
+#
+# If you'd rather not install XcodeGen: create a new iOS App project in Xcode
+# named GolfLaunchMonitor, delete its generated ContentView/App files, then drag
+# the GolfLaunchMonitor/ folder in with "Create groups" ticked. Set the
+# deployment target to iOS 18.0 and point Info.plist at GolfLaunchMonitor/Info.plist.
+
+name: GolfLaunchMonitor
+
+options:
+  bundleIdPrefix: com.yourname
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    # Strict concurrency is on deliberately: this app has a 240 Hz capture
+    # callback talking to actors, and the compiler catching a data race is
+    # cheaper than debugging a dropped frame on a driving range.
+    SWIFT_STRICT_CONCURRENCY: complete
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEAD_CODE_STRIPPING: YES
+    GCC_OPTIMIZATION_LEVEL: s
+
+targets:
+  GolfLaunchMonitor:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: GolfLaunchMonitor
+        excludes:
+          - "Info.plist"
+    resources:
+      - path: GolfLaunchMonitor/Courses
+        optional: true
+    info:
+      path: GolfLaunchMonitor/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yourname.golflaunchmonitor
+        PRODUCT_NAME: Launch Monitor
+        INFOPLIST_FILE: GolfLaunchMonitor/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        # Metal is used for the post-shot analysis pass.
+        MTL_ENABLE_DEBUG_INFO: INCLUDE_SOURCE
+      configs:
+        Release:
+          SWIFT_OPTIMIZATION_LEVEL: "-O"
+          MTL_ENABLE_DEBUG_INFO: NO
+    dependencies:
+      - sdk: AVFoundation.framework
+      - sdk: ARKit.framework
+      - sdk: CoreMotion.framework
+      - sdk: Vision.framework
+      - sdk: Metal.framework
+      - sdk: MetalPerformanceShaders.framework
+      - sdk: Accelerate.framework
+
+  GolfLaunchMonitorTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Tests
+    dependencies:
+      - target: GolfLaunchMonitor

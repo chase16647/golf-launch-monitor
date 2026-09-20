@@ -1,0 +1,55 @@
+# Tests the physics, then publishes the PWA to GitHub Pages.
+#
+# Pages is what makes this usable at a driving range: a real HTTPS certificate
+# on a permanent URL. iOS hides the motion and camera APIs on anything that
+# is not a secure context, so without trusted HTTPS the app cannot read tilt
+# or open the camera at all.
+
+name: Deploy PWA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pwa/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run physics and orientation tests
+        working-directory: pwa
+        # These pin the flight model to published Trackman tour averages and
+        # the attitude maths to known phone poses. If they fail, do not ship:
+        # the numbers in the app would be wrong in a way nobody would notice.
+        run: node --test "test/*.test.mjs"
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: pwa
+      - id: deployment
+        uses: actions/deploy-pages@v4

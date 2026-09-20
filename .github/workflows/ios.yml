@@ -1,0 +1,101 @@
+# Builds the native iOS app on a macOS runner and uploads an unsigned .ipa.
+#
+# This exists because the app is developed on Windows, where Swift cannot be
+# compiled at all. The first run of this workflow is effectively the first time
+# this code meets a compiler — expect errors, and read them as a to-do list
+# rather than a failure.
+#
+# Installing the result without a paid Apple Developer account:
+#   1. Download the ipa artifact from the run summary.
+#   2. Install AltStore or SideStore on the phone.
+#   3. Sideload with a free Apple ID. Apps signed that way expire after 7 days;
+#      AltStore re-signs automatically over Wi-Fi.
+
+name: Build iOS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'GolfLaunchMonitor/**'
+      - 'Tests/**'
+      - 'project.yml'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        # The repo deliberately ships project.yml instead of a .xcodeproj: a
+        # pbxproj is a thousand lines of UUID cross-references that cannot be
+        # reviewed or hand-verified, and breaks entirely if one is wrong.
+        run: xcodegen generate
+
+      - name: Build (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project GolfLaunchMonitor.xcodeproj \
+            -scheme GolfLaunchMonitor \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build 2>&1 | xcbeautify || xcodebuild \
+            -project GolfLaunchMonitor.xcodeproj \
+            -scheme GolfLaunchMonitor \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package .ipa
+        run: |
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -1)
+          if [ -z "$APP" ]; then echo "No .app produced"; exit 1; fi
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry GolfLaunchMonitor-unsigned.ipa Payload
+          ls -lh GolfLaunchMonitor-unsigned.ipa
+
+      - name: Upload .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: GolfLaunchMonitor-unsigned-ipa
+          path: GolfLaunchMonitor-unsigned.ipa
+          retention-days: 30
+
+  test:
+    runs-on: macos-latest
+    # Independent of the build job so a packaging problem does not hide a
+    # physics regression, and vice versa.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - name: Run unit tests on a simulator
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project GolfLaunchMonitor.xcodeproj \
+            -scheme GolfLaunchMonitor \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            CODE_SIGNING_ALLOWED=NO

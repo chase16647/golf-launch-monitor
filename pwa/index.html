@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Launch Monitor</title>
+<meta name="description" content="Golf ball flight model and yardage book.">
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Launch Monitor">
+<link rel="apple-touch-icon" href="./icons/icon-180.png">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./css/app.css">
+</head>
+<body>
+
+<header class="app-header">
+  <h1 class="app-title">Launch Monitor</h1>
+  <span class="app-subtitle" id="app-subtitle"></span>
+</header>
+
+<main>
+
+<!-- ══ CAPTURE ═══════════════════════════════════════════════════════════ -->
+<section class="view active" id="view-capture"></section>
+
+
+<!-- ══ RANGE ═════════════════════════════════════════════════════════════ -->
+<section class="view" id="view-range">
+  <div id="range-stats"></div>
+  <div class="card">
+    <h3 class="card-title">Landing pattern</h3>
+    <canvas id="c-dispersion"></canvas>
+    <div style="font-size:12px;color:var(--text-3);margin-top:8px">
+      Dashed ellipse is one standard deviation. Colour shows shot shape.
+    </div>
+  </div>
+  <div id="range-recent"></div>
+</section>
+
+<!-- ══ BAG ═══════════════════════════════════════════════════════════════ -->
+<section class="view" id="view-bag">
+  <div id="bag-content"></div>
+</section>
+
+<!-- ══ ALIGN ═════════════════════════════════════════════════════════════ -->
+<section class="view" id="view-align"></section>
+
+<!-- ══ SETUP ═════════════════════════════════════════════════════════════ -->
+<section class="view" id="view-setup">
+
+  <div class="note good">
+    <strong>Short answer:</strong> 5 ft away, phone at ball height, square to the target
+    line, in bright daylight — and recalibrate every time the phone moves.
+    Everything below is why.
+  </div>
+
+  <div class="card">
+    <h3 class="card-title">The rig</h3>
+    <div class="row"><span class="row-key">Distance to ball</span><span class="row-val">5 ft (4–7 ft usable)</span></div>
+    <div class="row"><span class="row-key">Camera height</span><span class="row-val">ball height, 2–6 in</span></div>
+    <div class="row"><span class="row-key">Angle to target line</span><span class="row-val">90° ± 5°</span></div>
+    <div class="row"><span class="row-key">Mount</span><span class="row-val">weighted tripod, not leaning</span></div>
+    <div class="row"><span class="row-key">Light</span><span class="row-val">bright daylight only</span></div>
+    <div style="font-size:13px;color:var(--text-2);line-height:1.55;margin-top:12px">
+      <strong style="color:var(--text)">Why 5 ft.</strong> Closer and the ball leaves the
+      frame before you have enough points. Farther and it shrinks: at 5 ft the ball is about
+      19 px across at 1080p, at 10 ft it is 9 px — you lose half your precision, and
+      precision is the whole game.
+      <br><br>
+      <strong style="color:var(--text)">Why ball height.</strong> A camera looking down
+      converts real launch angle into a projected one. Sitting it on the ground pointing up
+      has the same problem in reverse.
+      <br><br>
+      <strong style="color:var(--text)">Why square.</strong> The scale maths assumes the
+      ball flies across the image, not toward the lens. Off-square costs you by cosine:
+      5° is 0.4%, but 25° is 9% on every speed.
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 class="card-title">What makes it inaccurate — worst first</h3>
+
+    <details open>
+      <summary>1. Scale error · up to ±15 yd</summary>
+      <div class="details-body" style="font-size:13px;color:var(--text-2);line-height:1.55">
+        Pixels-to-inches is measured once, and every error in it passes straight into ball
+        speed. <strong>A 5% scale error is 5% on speed, which is about 14 yards of driver carry.</strong>
+        <br><br>
+        The big trap: calibrating on the <em>mat</em> instead of the <em>ball</em>. At 5 ft,
+        a ball 6 inches nearer than the surface you measured is a 10% scale error on its own.
+        The app cross-checks LiDAR depth against the ball's known 42.67 mm diameter and warns
+        you when they disagree by more than 8%.
+      </div>
+    </details>
+
+    <details>
+      <summary>2. Spin is modelled, not measured · ±10 yd</summary>
+      <div class="details-body" style="font-size:13px;color:var(--text-2);line-height:1.55">
+        No phone can see backspin from the side. It is estimated from club, speed and launch
+        angle. If your real spin is 1000 rpm off the model, driver carry moves roughly
+        8–12 yards. This is the single biggest systematic error and it does not go away with
+        a better tripod.
+        <br><br>
+        Side spin <em>is</em> measured, from how much the ball bends off its line — so
+        draw/fade is real even though the spin number is not.
+      </div>
+    </details>
+
+    <details>
+      <summary>3. Low light · breaks it entirely</summary>
+      <div class="details-body" style="font-size:13px;color:var(--text-2);line-height:1.55">
+        Freezing a 150 mph ball needs about 1/2000 s. At that shutter the ball still smears
+        33 mm — most of its own diameter. Indoors, at dusk, or in a net you cannot get that
+        exposure without ISO so high the ball's edge disappears into noise.
+        <strong>This app is a daylight tool.</strong>
+      </div>
+    </details>
+
+    <details>
+      <summary>4. Frame rate drift · up to ±20%</summary>
+      <div class="details-body" style="font-size:13px;color:var(--text-2);line-height:1.55">
+        Phones thermally throttle. If the app assumes 240 fps and the sensor quietly delivers
+        197, every speed reads 22% high. The native app times actual frame delivery instead of
+        trusting the nominal rate — but a hot phone in the sun will still drop frames, and
+        you will see the warning.
+      </div>
+    </details>
+
+    <details>
+      <summary>5. Phone tilt · ±8 yd</summary>
+      <div class="details-body" style="font-size:13px;color:var(--text-2);line-height:1.55">
+        Launch angle is measured against true horizontal, not against the phone. A 3° lean
+        is a 3° launch error, which is about 8 yards on a 7-iron. The accelerometer corrects
+        for this, but past ~6° the app asks you to straighten up rather than silently
+        correcting a large angle.
+      </div>
+    </details>
+
+    <details>
+      <summary>6. Start direction is the weakest number</summary>
+      <div class="details-body" style="font-size:13px;color:var(--text-2);line-height:1.55">
+        From side-on, left/right motion is straight toward or away from the lens, which is
+        exactly the direction a single camera sees worst. Treat push/pull as indicative.
+        Carry and ball speed are far more trustworthy.
+      </div>
+    </details>
+  </div>
+
+  <div class="card">
+    <h3 class="card-title">What accuracy to actually expect</h3>
+    <div class="row"><span class="row-key">Ball speed, good setup</span><span class="row-val">±2–4%</span></div>
+    <div class="row"><span class="row-key">Launch angle</span><span class="row-val">±1°</span></div>
+    <div class="row"><span class="row-key">Carry</span><span class="row-val">±5–8%</span></div>
+    <div class="row"><span class="row-key">Shot shape</span><span class="row-val">reliable past a firm fade</span></div>
+    <div class="row"><span class="row-key">Backspin</span><span class="row-val">modelled — do not quote it</span></div>
+    <div style="font-size:13px;color:var(--text-2);line-height:1.55;margin-top:12px">
+      That is not Trackman. It is good enough to <strong>gap your bag</strong> and to see
+      your dispersion honestly, which is what most range sessions are actually for.
+      Where it is weakest is exactly where it says it is weakest.
+    </div>
+  </div>
+
+  <details id="calc-block">
+    <summary>Flight calculator</summary>
+    <div class="details-body">
+      <div class="note warn" style="margin:12px 0">
+        <strong>This is a calculator, not a measurement.</strong> You type the
+        numbers in and it simulates the flight. It is here because the flight
+        model is genuinely good — fitted to tour data, 6 yd mean error — so it
+        is useful for "what would 5 mph more be worth" or for entering numbers
+        from another launch monitor. It is <em>not</em> your phone measuring
+        your swing. Nothing in a browser can do that.
+      </div>
+
+  <div class="card">
+    <h3 class="card-title">Club</h3>
+    <div class="chips" id="club-chips"></div>
+  </div>
+
+  <div class="card">
+    <h3 class="card-title">Launch conditions</h3>
+
+    <div class="field">
+      <div class="field-head"><span class="field-label">Ball speed</span><span class="field-value" id="out-speed"></span></div>
+      <input type="range" id="in-speed" min="40" max="200" step="1">
+    </div>
+
+    <div class="field">
+      <div class="field-head"><span class="field-label">Launch angle</span><span class="field-value" id="out-launch"></span></div>
+      <input type="range" id="in-launch" min="0" max="45" step="0.5">
+    </div>
+
+    <div class="field">
+      <div class="field-head">
+        <span class="field-label">Spin axis <span style="color:var(--text-3);font-weight:500">— tilt right = fade</span></span>
+        <span class="field-value" id="out-axis"></span>
+      </div>
+      <input type="range" id="in-axis" min="-40" max="40" step="1">
+    </div>
+
+    <div class="field">
+      <div class="field-head"><span class="field-label">Start direction</span><span class="field-value" id="out-azimuth"></span></div>
+      <input type="range" id="in-azimuth" min="-10" max="10" step="0.5">
+    </div>
+
+    <div class="field">
+      <div class="field-head">
+        <span class="field-label">Total spin</span>
+        <span class="field-value" id="out-spin"></span>
+      </div>
+      <input type="range" id="in-spin" min="1000" max="13000" step="50">
+      <button class="btn secondary" id="btn-spin-auto" style="margin-top:8px;padding:9px;font-size:13px">Back to modelled spin</button>
+    </div>
+
+    <div class="field" style="margin-bottom:0">
+      <div class="field-head"><span class="field-label">Player</span></div>
+      <select id="in-profile" style="width:100%;padding:12px;border-radius:12px;background:var(--surface-2);color:var(--text);border:0.5px solid var(--separator);font-size:15px;font-family:var(--font-round)"></select>
+    </div>
+  </div>
+
+  <div id="result" hidden>
+    <div class="metrics">
+      <div class="tile hero"><div class="tile-label">Carry</div><div class="tile-value primary"><span id="m-carry">—</span><span class="tile-unit">yd</span></div></div>
+      <div class="tile hero"><div class="tile-label">Total</div><div class="tile-value"><span id="m-total">—</span><span class="tile-unit">yd</span></div></div>
+    </div>
+
+    <div class="card">
+      <div class="shape-head">
+        <span class="shape-arrow" id="shape-arrow">↑</span>
+        <span class="shape-name" id="shape-name">—</span>
+        <span class="shape-curve" id="shape-curve"></span>
+      </div>
+      <canvas id="c-curve"></canvas>
+      <div id="spin-detail" style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap"></div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <h3 class="card-title" style="margin:0">Flight</h3>
+        <div class="seg" id="seg-traj" style="width:140px">
+          <button data-mode="side" class="active">Side</button>
+          <button data-mode="top">Top</button>
+        </div>
+      </div>
+      <canvas id="c-traj"></canvas>
+    </div>
+
+    <div class="metrics three">
+      <div class="tile compact"><div class="tile-label">Apex</div><div class="tile-value"><span id="m-apex">—</span><span class="tile-unit">ft</span></div></div>
+      <div class="tile compact"><div class="tile-label">Hang</div><div class="tile-value"><span id="m-hang">—</span><span class="tile-unit">s</span></div></div>
+      <div class="tile compact"><div class="tile-label">Descent</div><div class="tile-value"><span id="m-descent">—</span><span class="tile-unit">°</span></div></div>
+      <div class="tile compact"><div class="tile-label">Offline</div><div class="tile-value"><span id="m-offline">—</span><span class="tile-unit">yd</span></div></div>
+      <div class="tile compact"><div class="tile-label">Roll</div><div class="tile-value"><span id="m-roll">—</span><span class="tile-unit">yd</span></div></div>
+      <div class="tile compact"><div class="tile-label">Club spd</div><div class="tile-value"><span id="m-club-speed">—</span><span class="tile-unit">mph</span></div><div class="tile-foot">estimated</div></div>
+    </div>
+
+    <div class="field">
+      <div class="field-head"><span class="field-label">Altitude</span><span class="field-value" id="out-alt"></span></div>
+      <input type="range" id="in-alt" min="0" max="2500" step="50">
+      <div class="field-head" style="margin-top:12px"><span class="field-label">Temperature</span><span class="field-value" id="out-temp"></span></div>
+      <input type="range" id="in-temp" min="-5" max="45" step="1">
+      <div style="display:flex;justify-content:space-between;margin-top:10px;font-size:13px">
+        <span style="color:var(--text-3)">Carry vs sea level / 20°C</span>
+        <span style="color:var(--primary);font-family:var(--mono);font-size:12px" id="out-carryfactor"></span>
+      </div>
+    </div>
+
+    <button class="btn" id="btn-save">Save to bag</button>
+  </div>
+    </div>
+  </details>
+
+  <div class="card">
+    <h3 class="card-title">Can this phone track a ball?</h3>
+    <div style="font-size:13px;color:var(--text-2);line-height:1.55;margin-bottom:12px">
+      A browser cannot do what ball tracking needs — no 240&nbsp;fps, no shutter
+      lock, no LiDAR. Rather than take my word for it, this measures your device
+      and shows you the numbers.
+    </div>
+    <button class="btn secondary" id="btn-probe">Run camera test</button>
+    <div id="camera-output" style="margin-top:14px"></div>
+  </div>
+
+  <div class="note bad">
+    <strong>Recalibrate whenever the phone moves.</strong> Bumping the tripod between
+    calibration and your swing invalidates the scale, and nothing downstream can detect a
+    wrong answer that is self-consistent.
+  </div>
+</section>
+
+</main>
+
+<nav class="tabbar">
+  <button class="tab active" data-tab="capture">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 8h4l2-2h6l2 2h4v12H3z"/><circle cx="12" cy="13" r="3.5"/></svg>
+    Capture
+  </button>
+  <button class="tab" data-tab="bag">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 8h12l-1 12H7L6 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>
+    Bag
+  </button>
+  <button class="tab" data-tab="range">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1"/></svg>
+    Range
+  </button>
+  <button class="tab" data-tab="align">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M8 9l8 6"/></svg>
+    Align
+  </button>
+  <button class="tab" data-tab="setup">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
+    Guide
+  </button>
+</nav>
+
+<script type="module" src="./js/app.js"></script>
+</body>
+</html>

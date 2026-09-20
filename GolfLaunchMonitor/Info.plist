@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Launch Monitor</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+
+	<key>NSCameraUsageDescription</key>
+	<string>The camera records your ball at 240 frames per second to measure ball speed, launch angle and shot shape.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>The accelerometer establishes true horizontal so launch angle is measured against level ground rather than however the phone is leaning.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Audio is not recorded. This permission is requested only because high-frame-rate capture formats declare an audio track.</string>
+
+	<!-- LiDAR depth for pixel-to-millimetre calibration. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Used only to apply local altitude and temperature to the ball-flight model. Optional.</string>
+
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string></string>
+	</dict>
+
+	<!-- Landscape only: the phone sits side-on to the ball, and the tracker's
+	     geometry assumes the image X axis is downrange. -->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+		<string>video-camera</string>
+	</array>
+
+	<key>UIUserInterfaceStyle</key>
+	<string>Dark</string>
+
+	<!-- Sustained 240 fps capture plus Neural Engine analysis is thermally
+	     demanding; this keeps the app responsive under load. -->
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+</dict>
+</plist>

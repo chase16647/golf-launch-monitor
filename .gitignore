@@ -1,0 +1,32 @@
+# TLS material for local phone testing. The private key must never be
+# published — regenerate it locally with the command in pwa/README.md.
+pwa/.certs/
+*.pem
+*.key
+*.p12
+*.mobileprovision
+
+# Build output
+build/
+DerivedData/
+*.ipa
+*.xcarchive
+*.dSYM
+GolfLaunchMonitor.xcodeproj/
+GolfLaunchMonitor.xcworkspace/
+xcuserdata/
+*.xcuserstate
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Editors / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Scratch
+*.log
+/tmp/
