@@ -3,16 +3,55 @@
 An iPhone launch monitor for iPhone 17 Pro (A19 Pro, 48MP Fusion, LiDAR, iOS 18+).
 Set the phone 4–7 ft to the side of the ball, hit, get numbers.
 
+## Use it right now
+
+**Web app (works today, nothing to install):**
+### → https://chase16647.github.io/golf-launch-monitor/
+
+Open in Safari on the phone, Share → **Add to Home Screen**. Real HTTPS, so
+motion sensors and camera both work. Works offline after the first load.
+
+It does: strike capture + frame-by-frame replay, rig alignment (tilt / lean /
+squareness with saved profiles), dispersion, yardage book, flight calculator.
+It does **not** measure ball speed — no browser can, and the Guide tab measures
+your device to show you why.
+
+**Native iOS app (measures ball speed — needs sideloading):**
+
+Every push builds it on a macOS runner. Grab `GolfLaunchMonitor-unsigned-ipa`
+from the newest green run:
+
+### → https://github.com/chase16647/golf-launch-monitor/actions/workflows/ios.yml
+
+Install it with **AltStore** or **SideStore** and a free Apple ID. No Mac and
+no paid developer account needed. Free-signed apps expire after 7 days;
+AltStore re-signs automatically over Wi-Fi.
+
 ---
 
 ## Read this first
 
-**This has never been compiled.** It was written on a Windows machine, and
-iOS code only builds on a Mac with Xcode. Expect to fix compile errors on the
-first build — probably a handful of SwiftUI API mismatches and `Sendable`
-complaints from strict concurrency. The physics and the computer vision have
-been reasoned through and numerically validated; the *Swift syntax* has not
-been checked by a compiler.
+**The Swift now compiles** — CI builds it on every push and produces an
+installable `.ipa`. It has never been *run on a phone*, so treat the camera
+pipeline as unproven in the field even though it is type-correct.
+
+Getting there took three rounds against the compiler, which found 14 real
+errors on first contact. Worth knowing what they were, because they are the
+errors you get when you write Swift without a compiler:
+
+* `Vision` returns `[simd_float2]`, not `[CGPoint]`
+* four expressions the type-checker refused outright — mixing integer literals
+  with `SIMD3<Double>` is the trigger
+* `isVideoHDRSupported` is on the *format*, not the device
+* a nested `Tab` enum silently shadowed SwiftUI's own `Tab` view
+* `AVCaptureDevice`, `CVPixelBuffer` and the capture delegate are all
+  non-`Sendable`, so every hand-off across an isolation boundary was an error
+  under strict concurrency
+
+The last group is the interesting one: each is a true statement about
+AVFoundation's types and a false one about this usage, so they are resolved
+with `@unchecked Sendable` / `nonisolated(unsafe)` **and the invariant written
+down at each site**, rather than by turning strict concurrency off.
 
 What **was** verified, numerically, before it was written into Swift:
 
