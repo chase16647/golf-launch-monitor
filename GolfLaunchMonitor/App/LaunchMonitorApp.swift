@@ -40,23 +40,26 @@ struct RootView: View {
     @Bindable var course: CourseMode
     @Environment(SessionStore.self) private var store
 
-    @State private var tab: Tab = .capture
+    @State private var tab: AppTab = .capture
     @State private var presentedShot: ShotResult?
 
-    enum Tab: Hashable { case capture, range, course, bag }
+    /// Named AppTab, not Tab: SwiftUI has its own `Tab` view, and shadowing it
+    /// makes `Tab("Monitor", ...)` resolve to this enum, which has no such
+    /// initializer.
+    enum AppTab: Hashable { case capture, range, course, bag }
 
     var body: some View {
         TabView(selection: $tab) {
-            Tab("Monitor", systemImage: "camera.metering.center.weighted", value: Tab.capture) {
+            Tab("Monitor", systemImage: "camera.metering.center.weighted", value: AppTab.capture) {
                 CaptureView(pipeline: pipeline)
             }
-            Tab("Range", systemImage: "target", value: Tab.range) {
+            Tab("Range", systemImage: "target", value: AppTab.range) {
                 NavigationStack { RangeView(range: range, pipeline: pipeline) }
             }
-            Tab("Course", systemImage: "flag.fill", value: Tab.course) {
+            Tab("Course", systemImage: "flag.fill", value: AppTab.course) {
                 NavigationStack { CourseView(course: course) }
             }
-            Tab("Bag", systemImage: "bag.fill", value: Tab.bag) {
+            Tab("Bag", systemImage: "bag.fill", value: AppTab.bag) {
                 NavigationStack { BagView() }
             }
         }

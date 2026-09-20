@@ -220,8 +220,10 @@ final class CameraManager: ObservableObject {
         // Kill every automatic system that would fight us mid-swing.
         if device.isLowLightBoostSupported { device.automaticallyEnablesLowLightBoostWhenAvailable = false }
         if device.isSubjectAreaChangeMonitoringEnabled { device.isSubjectAreaChangeMonitoringEnabled = false }
-        if device.isVideoHDRSupported {
-            // HDR bracketing doubles effective exposure time. Not acceptable.
+        // HDR lives on the FORMAT, not the device — `device.isVideoHDRSupported`
+        // does not exist. HDR bracketing doubles effective exposure time, which
+        // is exactly what we are trying to avoid.
+        if device.activeFormat.isVideoHDRSupported {
             device.automaticallyAdjustsVideoHDREnabled = false
             device.isVideoHDREnabled = false
         }
@@ -304,6 +306,11 @@ final class CameraManager: ObservableObject {
     /// it cannot un-smear a 33 mm streak.
     func lockExposure(targetShutter denominator: Int = 2000) async {
         guard let device else { return }
+        // AVCaptureDevice is not Sendable, and Swift 6 cannot see that every
+        // access to it is serialised onto sessionQueue. That invariant is real
+        // and enforced by construction, so we assert it here rather than
+        // dropping the whole target to minimal concurrency checking.
+        nonisolated(unsafe) let device = device
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             sessionQueue.async { [weak self] in
                 guard let self else { cont.resume(); return }
@@ -363,7 +370,8 @@ final class CameraManager: ObservableObject {
         exposureTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(250))
-                guard let self, let device = self.device, self.exposure.isLocked else { continue }
+                guard let self, let dev = self.device, self.exposure.isLocked else { continue }
+                nonisolated(unsafe) let device = dev
                 let offset = device.exposureTargetOffset
                 self.exposure.targetOffsetEV = offset
                 // Deadband: don't chase noise.
@@ -395,6 +403,7 @@ final class CameraManager: ObservableObject {
     /// is actually good for. Claiming otherwise would be hand-waving.
     func lockFocus(atNormalizedPoint point: CGPoint) async {
         guard let device else { return }
+        nonisolated(unsafe) let device = device
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             sessionQueue.async {
                 guard (try? device.lockForConfiguration()) != nil else { cont.resume(); return }

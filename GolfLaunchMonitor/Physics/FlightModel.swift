@@ -273,8 +273,17 @@ enum FlightModel {
 
             // Position advances on the RK4-weighted *velocities*, which is the
             // consistent pairing for this second-order system.
-            let nextP = p + (h / 6) * (v + 2 * v2 + 2 * v3 + v4)
-            let nextV = v + (h / 6) * (k1 + 2 * k2 + 2 * k3 + k4)
+            //
+            // Written out in steps rather than one expression: mixing integer
+            // literals with SIMD3<Double> makes the type-checker give up
+            // ("unable to type-check in reasonable time"). Explicit Double
+            // literals and named intermediates compile instantly.
+            let sixth: Double = h / 6.0
+            let two: Double = 2.0
+            let vSum: SIMD3<Double> = v + two * v2 + two * v3 + v4
+            let kSum: SIMD3<Double> = k1 + two * k2 + two * k3 + k4
+            let nextP: SIMD3<Double> = p + sixth * vSum
+            let nextV: SIMD3<Double> = v + sixth * kSum
             t += h
             apex = max(apex, nextP.y)
 
@@ -293,9 +302,10 @@ enum FlightModel {
                 let onLine = SIMD2<Double>(launchDir.x * along, launchDir.y * along)
                 let curve = (land.z - onLine.y) / 0.9144
 
-                let landSpeed = simd_length(landV)
-                let descent = atan2(-landV.y, sqrt(landV.x * landV.x + landV.z * landV.z))
-                    * 180 / .pi
+                let landSpeed: Double = simd_length(landV)
+                let horizontal: Double = sqrt(landV.x * landV.x + landV.z * landV.z)
+                let descentRad: Double = atan2(-landV.y, horizontal)
+                let descent: Double = descentRad * 180.0 / Double.pi
 
                 points.append(TrajectoryPoint(t: t, x: land.x, y: 0, z: land.z,
                                               speed: landSpeed))

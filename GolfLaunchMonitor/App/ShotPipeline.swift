@@ -72,14 +72,13 @@ final class ShotPipeline: ObservableObject {
     private let tracker = BallTracker()
     private let trigger = ImpactTrigger()
     private let voice = VoiceCoach()
+
+    /// Frame-rate meter, deliberately NOT actor isolated - see `begin()`.
+    private let frameMeter = FrameRateMeter()
     private let log = Logger(subsystem: "GolfLaunchMonitor", category: "Pipeline")
 
     /// Normalized tee-box point the user aims at.
     @Published var teePoint = CGPoint(x: 0.5, y: 0.55)
-
-    /// Frame-rate measurement from actual PTS deltas — never assume nominal.
-    private var lastPTS: CMTime = .invalid
-    private var frameIntervals: [Double] = []
 
     private var searchTask: Task<Void, Never>?
 
@@ -98,11 +97,20 @@ final class ShotPipeline: ObservableObject {
             Task { @MainActor in self?.reflect(state) }
         }
 
-        await camera.start(mode: captureMode, onFrame: { [weak self] pb, pts, seq in
+        // Hoist the two collaborators out BEFORE building the closure, so the
+        // callback captures them directly and never touches `self`.
+        //
+        // This runs on the capture queue at 240 Hz. Reaching through a
+        // @MainActor `self` from there is both a compile error under strict
+        // concurrency and, were it allowed, an executor hop per frame - which
+        // would blow the 4.16 ms budget on its own.
+        let trigger = self.trigger
+        let meter = self.frameMeter
+
+        await camera.start(mode: captureMode, onFrame: { pb, pts, seq in
             // CAPTURE QUEUE. Nothing here may await or allocate.
-            guard let self else { return }
-            self.trigger.process(pixelBuffer: pb, sequence: seq)
-            self.noteFrameTiming(pts)
+            trigger.process(pixelBuffer: pb, sequence: seq)
+            meter.note(pts)
         })
 
         await camera.lockExposure(targetShutter: 2000)
@@ -386,24 +394,11 @@ final class ShotPipeline: ObservableObject {
 
     // MARK: Frame timing
 
-    private func noteFrameTiming(_ pts: CMTime) {
-        guard lastPTS.isValid else { lastPTS = pts; return }
-        let dt = CMTimeGetSeconds(pts) - CMTimeGetSeconds(lastPTS)
-        lastPTS = pts
-        guard dt > 0, dt < 0.1 else { return }
-        frameIntervals.append(dt)
-        if frameIntervals.count > 120 { frameIntervals.removeFirst() }
-    }
-
     /// Real frame rate from PTS deltas. Under thermal throttling the sensor
-    /// quietly drops below nominal, and using 240 when you're getting 197
-    /// inflates every speed by 22 %.
+    /// quietly drops below nominal, and assuming 240 while actually receiving
+    /// 197 inflates every measured speed by 22 %.
     func measuredFrameRate() -> Double {
-        guard frameIntervals.count > 20 else { return captureMode.targetFrameRate }
-        let sorted = frameIntervals.sorted()
-        let median = sorted[sorted.count / 2]
-        guard median > 0 else { return captureMode.targetFrameRate }
-        return 1.0 / median
+        frameMeter.median() ?? captureMode.targetFrameRate
     }
 
     var isFrameRateHealthy: Bool {
@@ -441,3 +436,45 @@ struct ScrubFrame: Identifiable, Sendable {
 }
 
 import CoreImage
+
+
+// MARK: - Frame rate meter
+
+/// Measures the real delivery rate from presentation timestamps.
+///
+/// Written from the capture queue at up to 240 Hz and read from the main actor
+/// once per shot, so it takes a lock rather than being actor isolated: an
+/// executor hop per frame would cost far more than the measurement is worth.
+final class FrameRateMeter: @unchecked Sendable {
+    private var lastPTS: CMTime = .invalid
+    private var intervals: [Double] = []
+    private let lock = NSLock()
+
+    func note(_ pts: CMTime) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard lastPTS.isValid else { lastPTS = pts; return }
+        let dt = CMTimeGetSeconds(pts) - CMTimeGetSeconds(lastPTS)
+        lastPTS = pts
+        guard dt > 0, dt < 0.1 else { return }
+        intervals.append(dt)
+        if intervals.count > 120 { intervals.removeFirst() }
+    }
+
+    /// Median rate in fps, or nil until there is enough data to mean anything.
+    func median() -> Double? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard intervals.count > 20 else { return nil }
+        let sorted = intervals.sorted()
+        let m = sorted[sorted.count / 2]
+        return m > 0 ? 1.0 / m : nil
+    }
+
+    func reset() {
+        lock.lock()
+        defer { lock.unlock() }
+        lastPTS = .invalid
+        intervals.removeAll()
+    }
+}

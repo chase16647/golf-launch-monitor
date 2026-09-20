@@ -169,7 +169,9 @@ enum SetupEvaluator {
         } else {
             // Assuming square. The error is however wrong that assumption is —
             // and by construction we cannot know.
-            let worst = (1 / cos(5 * .pi / 180) - 1) * 100
+            // Broken out: the literal-heavy one-liner times out the type-checker.
+            let assumedYawRad: Double = 5.0 * Double.pi / 180.0
+            let worst: Double = (1.0 / cos(assumedYawRad) - 1.0) * 100.0
             axes.append(SetupAxis(
                 id: "yaw", label: "Square to target", display: "assumed", status: .warn,
                 message: "Target line not set. Speed could read low and nothing can detect it.",

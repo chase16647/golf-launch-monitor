@@ -75,8 +75,8 @@ struct RangeView: View {
 
     private var scoreCard: some View {
         HStack(spacing: 10) {
-            MetricTile(label: "Points", value: "\(range.totalPoints)", emphasis: .compact,
-                       tint: .lmPrimary)
+            MetricTile(label: "Points", value: "\(range.totalPoints)",
+                       tint: .lmPrimary, emphasis: .compact)
             MetricTile(label: "Greens",
                        value: "\(range.hitCount)/\(range.results.count)", emphasis: .compact)
             MetricTile(label: "Avg Miss",

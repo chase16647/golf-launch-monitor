@@ -153,7 +153,11 @@ actor BallTracker {
             // most shadow false-positives for free.
             guard intensity > 90 else { continue }
 
-            let score = metrics.circularity * (1 - sizeError) * (intensity / 255)
+                // Split out: the compiler times out type-checking this as one
+            // expression once Double literals and SIMD are both in play.
+            let sizeScore: Double = 1.0 - sizeError
+            let brightScore: Double = intensity / 255.0
+            let score: Double = metrics.circularity * sizeScore * brightScore
             let obs = BallObservation(centre: centre,
                                       radiusPixels: radius,
                                       majorAxisPixels: radius * 2,
@@ -418,7 +422,9 @@ actor BallTracker {
         var circularity: Double
     }
 
-    private func contourMetrics(_ normalized: [CGPoint],
+    /// Vision hands back `simd_float2`, not `CGPoint` — taking CGPoint here
+    /// compiled nowhere and was the first error the toolchain found.
+    private func contourMetrics(_ normalized: [SIMD2<Float>],
                                 imageWidth: Int,
                                 imageHeight: Int) -> ContourMetrics {
         let w = Double(imageWidth), h = Double(imageHeight)
