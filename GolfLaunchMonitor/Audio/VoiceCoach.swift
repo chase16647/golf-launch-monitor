@@ -25,7 +25,6 @@ final class VoiceCoach {
         try? session.setCategory(.playback,
                                  mode: .spokenAudio,
                                  options: [.duckOthers, .mixWithOthers])
-        try? session.setActive(true)
     }
 
     func announce(_ shot: ShotResult) {
@@ -49,6 +48,7 @@ final class VoiceCoach {
 
     func speak(_ text: String) {
         guard isEnabled else { return }
+        try? AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }

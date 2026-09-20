@@ -49,7 +49,6 @@
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arm64</string>
-		<string>video-camera</string>
 	</array>
 
 	<key>UIUserInterfaceStyle</key>
