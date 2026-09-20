@@ -441,7 +441,8 @@ final class CameraManager: ObservableObject {
 /// with the rest of the app through the lock-free ring and a Sendable closure.
 final class FrameCaptureDelegate: NSObject,
                                   AVCaptureVideoDataOutputSampleBufferDelegate,
-                                  AVCaptureDepthDataOutputDelegate {
+                                  AVCaptureDepthDataOutputDelegate,
+                                  @unchecked Sendable {
 
     private let ring: FrameRingBuffer
     private let onFrame: @Sendable (CVPixelBuffer, CMTime, Int) -> Void

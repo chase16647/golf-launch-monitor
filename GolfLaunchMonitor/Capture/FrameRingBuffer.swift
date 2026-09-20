@@ -29,7 +29,20 @@ import Synchronization
 
 /// One captured frame plus the metadata the analyzer needs to interpret it.
 /// Deliberately a value type of POD fields so it can live in a preallocated array.
-struct FrameSlot {
+/// `@unchecked Sendable` because CVPixelBuffer is not annotated Sendable, yet
+/// moving one of these between the capture queue and the analyzer actor is
+/// safe here by construction:
+///
+///   * The ring holds a strong retain on every buffer it hands out, so the
+///     capture pool cannot recycle a buffer while the analyzer holds it.
+///   * The analyzer only ever READS pixel data. Nothing mutates a buffer after
+///     AVFoundation has delivered it.
+///   * `snapshot` re-checks the write head after copying and refuses to return
+///     a range that was overwritten mid-copy.
+///
+/// Without this, every hand-off to BallTracker is "sending risks causing data
+/// races" — a true statement about the type, not about this usage.
+struct FrameSlot: @unchecked Sendable {
     var pixelBuffer: CVPixelBuffer
     /// Presentation timestamp straight from the sample buffer. This is the
     /// authoritative clock — do *not* assume 1/240 s spacing, the sensor drops
