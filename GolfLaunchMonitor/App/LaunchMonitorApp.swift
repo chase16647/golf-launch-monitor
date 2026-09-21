@@ -6,6 +6,7 @@
 import SwiftUI
 
 @main
+@MainActor
 struct LaunchMonitorApp: App {
     @State private var store = SessionStore()
     @StateObject private var pipeline = ShotPipeline()
