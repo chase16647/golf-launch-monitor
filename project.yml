@@ -52,8 +52,8 @@ targets:
       path: GolfLaunchMonitor/Info.plist
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.yourname.golflaunchmonitor
-        PRODUCT_NAME: Launch Monitor
+        PRODUCT_BUNDLE_IDENTIFIER: com.chase.launchmonitor
+        PRODUCT_NAME: GolfLaunchMonitor
         INFOPLIST_FILE: GolfLaunchMonitor/Info.plist
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
