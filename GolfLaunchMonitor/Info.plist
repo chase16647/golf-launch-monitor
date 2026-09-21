@@ -33,10 +33,7 @@
 	<string>Used only to apply local altitude and temperature to the ball-flight model. Optional.</string>
 
 	<key>UILaunchScreen</key>
-	<dict>
-		<key>UIColorName</key>
-		<string></string>
-	</dict>
+	<dict/>
 
 	<!-- Landscape only: the phone sits side-on to the ball, and the tracker's
 	     geometry assumes the image X axis is downrange. -->
