@@ -287,6 +287,30 @@ a green you know well reads wrong on first try, flip it once and it's fixed
 for good — a self-correcting hardware-sign safety net, not an admission the
 physics itself is in doubt.
 
+### More than one read: the ball alone is not the whole green
+
+The spot right at the ball is often a locally flattened tee-up area, not the
+green's real slope — so the app defaults to reading at **the ball and the
+hole**, with a third **midpoint** option for a putt you suspect double-breaks.
+Each point measures independently (lay the phone flat there, top edge at the
+hole); the physics then uses each point's slope where the ball actually is
+during the simulated roll — linearly interpolated between the sampled points
+by the ball's own position — rather than one blended number.
+
+That distinction is not academic. Simply *averaging* two readings is a
+meaningfully different and often wrong thing: on a genuine double-breaker (say
+the green tilts one way near the ball and the other way near the hole), the
+average of +2.5% and -2.5% is exactly zero — "no break" — for a putt that
+very much breaks, twice. `tools/verify-green.mjs` reproduces this exact case:
+the naive average solves to 0.0000°, the position-interpolated field to a
+small but real, non-zero aim. A uniform green (every point reads the same)
+still solves to *exactly* the original single-point result — this is a strict
+upgrade, not a behaviour change for the common case.
+
+Each sampled point's slope is shown individually in the result ("2.0% at the
+ball, 0.0% at halfway, 2.0% at the hole"), so a double-breaker is visible as a
+double-breaker, not hidden inside one averaged percentage.
+
 "Play it like a flat N-footer" translates the solved speed into something a
 golfer already has a feel for, rather than an abstract number — the flat-
 green distance that needs the same speed to die there.

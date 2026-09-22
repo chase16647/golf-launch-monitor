@@ -87,14 +87,26 @@ class GravityReader extends EventTarget {
 
 // ── View ─────────────────────────────────────────────────────────────────
 
+// How many points to read, and where each falls as a FRACTION of the total
+// distance (0 = ball, 1 = hole) rather than an absolute distance — so
+// already-captured points stay meaningful if the distance slider is nudged
+// afterward, and so this scales to any putt length automatically.
+const READ_PLANS = {
+  1: { label: 'Just the ball', fractions: [0], stepLabels: ['the ball'] },
+  2: { label: 'Ball + hole', fractions: [0, 1], stepLabels: ['the ball', 'the hole'] },
+  3: { label: 'Ball + middle + hole', fractions: [0, 0.5, 1], stepLabels: ['the ball', 'halfway to the hole', 'the hole'] },
+};
+
 export class GreenView {
   constructor(root) {
     this.root = root;
     this.reader = new GravityReader();
     this.distanceFeet = 10;
     this.speedKey = 'medium';
+    this.pointCount = 2; // matches Chase's instinct: don't just read at the ball
     this.flipped = localStorage.getItem(FLIP_KEY) === '1';
-    this.reading = null; // {x,y} averaged gravity
+    /** @type {{fraction:number, gx:number, gy:number}[]} raw captures so far */
+    this.pointsRaw = [];
     this.result = null;
     this.isReading = false;
   }
@@ -106,6 +118,13 @@ export class GreenView {
     this._bind();
     this._syncInputs();
     if (this.reader.permission === 'granted') this.reader.start();
+    // Re-show whatever was already captured — navigating to another tab
+    // mid-round and back shouldn't throw away readings you already took.
+    if (this.result) this._renderResult();
+    if (this.pointsRaw.length) {
+      const last = this.pointsRaw[this.pointsRaw.length - 1];
+      this._drawBubble(slopeAccelFromGravity(last.gx, last.gy, this.flipped));
+    }
   }
 
   unmount() {
@@ -118,12 +137,16 @@ export class GreenView {
       <details id="gr-intro" ${seenIntro ? '' : 'open'}>
         <summary>How to read a green</summary>
         <div class="details-body" style="font-size:13px;color:var(--text-2);line-height:1.6">
-          <p><strong style="color:var(--text)">1.</strong> Stand behind the ball,
-          set the distance and green speed below.</p>
-          <p><strong style="color:var(--text)">2.</strong> Lay the phone FLAT on
-          the green at the ball, screen up, top edge pointed at the hole.</p>
-          <p><strong style="color:var(--text)">3.</strong> Tap <strong>Read
-          slope</strong> and hold still for a second.</p>
+          <p><strong style="color:var(--text)">1.</strong> Set the distance,
+          green speed, and how many points to read below.</p>
+          <p><strong style="color:var(--text)">2.</strong> For each point, lay
+          the phone FLAT on the green at that spot, screen up, top edge
+          pointed at the hole, and tap <strong>Read here</strong>.</p>
+          <p><strong style="color:var(--text)">Why more than one point?</strong>
+          The spot right at the ball is often a locally flattened tee-up area
+          — not the green's real slope. Reading at the ball AND the hole (or
+          adding a middle read on a suspect double-breaker) measures the
+          actual slope where the ball travels, not just where it starts.</p>
           <p>This measures the ACTUAL tilt with the accelerometer — it is not
           AimPoint's trained-feel technique, it is a direct physical
           measurement, run through the same rolling-ball physics as the rest
@@ -142,11 +165,19 @@ export class GreenView {
           </div>
           <input type="range" id="gr-dist" min="2" max="50" step="1">
         </div>
-        <div class="field" style="margin-bottom:0">
+        <div class="field">
           <div class="field-head"><span class="field-label">Green speed</span></div>
           <div class="chips" id="gr-speed-chips">
             ${Object.entries(GREEN_SPEEDS).map(([k, v]) =>
               `<button class="chip${k === this.speedKey ? ' active' : ''}" data-speed="${k}">${v.label.split(' ')[0]}<small>${v.stimpFeet}ft stimp</small></button>`
+            ).join('')}
+          </div>
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <div class="field-head"><span class="field-label">Points to read</span></div>
+          <div class="chips" id="gr-plan-chips">
+            ${Object.entries(READ_PLANS).map(([k, v]) =>
+              `<button class="chip${Number(k) === this.pointCount ? ' active' : ''}" data-plan="${k}">${v.label}</button>`
             ).join('')}
           </div>
         </div>
@@ -158,7 +189,9 @@ export class GreenView {
           <span class="pill" id="gr-status">not read</span>
         </div>
         <canvas id="gr-bubble" style="width:100%"></canvas>
-        <button class="btn" id="gr-read" style="margin-top:12px">Read slope</button>
+        <div id="gr-step-label" style="text-align:center;font-size:13px;color:var(--text-2);margin:10px 0 4px"></div>
+        <button class="btn" id="gr-read" style="margin-top:6px">Read here</button>
+        <button class="btn secondary" id="gr-restart" style="margin-top:8px;display:none">Start over</button>
         <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12px;color:var(--text-3)">
           <input type="checkbox" id="gr-flip" ${this.flipped ? 'checked' : ''}>
           Reads backwards on my phone — flip it
@@ -179,29 +212,80 @@ export class GreenView {
     distSlider.oninput = (e) => {
       this.distanceFeet = Number(e.target.value);
       this._syncInputs();
-      if (this.reading) this._computeAndRenderResult();
+      // Point positions are stored as fractions of distance, so already-taken
+      // readings stay meaningful and just recompute at the new distance.
+      if (this._allPointsCaptured()) this._computeAndRenderResult();
     };
+
+    this.root.querySelectorAll('[data-plan]').forEach((b) => {
+      b.onclick = () => {
+        this.pointCount = Number(b.dataset.plan);
+        this.root.querySelectorAll('[data-plan]').forEach((x) => x.classList.toggle('active', x === b));
+        this._resetCapture();
+      };
+    });
+
+    this._q('#gr-restart').onclick = () => this._resetCapture();
 
     this.root.querySelectorAll('[data-speed]').forEach((b) => {
       b.onclick = () => {
         this.speedKey = b.dataset.speed;
         this.root.querySelectorAll('[data-speed]').forEach((x) => x.classList.toggle('active', x === b));
-        if (this.reading) this._computeAndRenderResult();
+        if (this._allPointsCaptured()) this._computeAndRenderResult();
       };
     });
 
     this._q('#gr-flip').onchange = (e) => {
       this.flipped = e.target.checked;
       localStorage.setItem(FLIP_KEY, this.flipped ? '1' : '0');
-      if (this.reading) this._computeAndRenderResult();
+      if (this._allPointsCaptured()) this._computeAndRenderResult();
     };
 
     this._q('#gr-read').onclick = () => this._takeReading();
     this._renderPermission();
+    this._renderStep();
   }
 
   _syncInputs() {
     this._q('#gr-dist-out').textContent = `${this.distanceFeet} ft`;
+  }
+
+  _plan() { return READ_PLANS[this.pointCount]; }
+  _allPointsCaptured() { return this.pointsRaw.length >= this._plan().fractions.length; }
+
+  _resetCapture() {
+    this.pointsRaw = [];
+    this.result = null;
+    const status = this._q('#gr-status');
+    if (status) { status.textContent = 'not read'; status.className = 'pill'; }
+    this._renderStep();
+    this._q('#gr-result').innerHTML = '';
+    this._drawBubble({ x: 0, y: 0 });
+  }
+
+  /** Which point comes next, and the walking instruction for it. */
+  _renderStep() {
+    const label = this._q('#gr-step-label');
+    const restartBtn = this._q('#gr-restart');
+    const readBtn = this._q('#gr-read');
+    if (!label) return;
+
+    const plan = this._plan();
+    const stepIndex = this.pointsRaw.length;
+
+    if (stepIndex >= plan.fractions.length) {
+      label.textContent = `All ${plan.fractions.length} point${plan.fractions.length > 1 ? 's' : ''} read.`;
+      readBtn.style.display = 'none';
+      restartBtn.style.display = 'block';
+      return;
+    }
+
+    readBtn.style.display = 'block';
+    restartBtn.style.display = stepIndex > 0 ? 'block' : 'none';
+    const stepName = plan.stepLabels[stepIndex];
+    label.textContent = stepIndex === 0
+      ? `Lay the phone flat at ${stepName}, top edge pointed at the hole.`
+      : `Now walk to ${stepName}, lay the phone flat, top edge still pointed at the hole.`;
   }
 
   _renderPermission() {
@@ -229,6 +313,8 @@ export class GreenView {
   }
 
   async _takeReading() {
+    if (this._allPointsCaptured()) return; // nothing left to read this round
+
     if (this.reader.permission !== 'granted') {
       await this.reader.requestPermission();
       this._renderPermission();
@@ -246,7 +332,7 @@ export class GreenView {
     }
     const avg = await this.reader.average(1000);
     btn.disabled = false;
-    btn.textContent = 'Read slope';
+    btn.textContent = 'Read here';
 
     if (!avg || avg.n < 5) {
       status.textContent = 'no reading';
@@ -254,21 +340,35 @@ export class GreenView {
       return;
     }
 
-    this.reading = avg;
-    status.textContent = 'read';
-    status.className = 'pill good';
+    const fraction = this._plan().fractions[this.pointsRaw.length];
+    this.pointsRaw.push({ fraction, gx: avg.x, gy: avg.y });
     try { navigator.vibrate?.(20); } catch { /* optional */ }
-    this._computeAndRenderResult();
+
+    if (this._allPointsCaptured()) {
+      status.textContent = 'read';
+      status.className = 'pill good';
+      this._computeAndRenderResult();
+    } else {
+      status.textContent = `${this.pointsRaw.length}/${this._plan().fractions.length} read`;
+      status.className = 'pill warn';
+      this._drawBubble(slopeAccelFromGravity(avg.x, avg.y, this.flipped));
+    }
+    this._renderStep();
   }
 
   _computeAndRenderResult() {
-    const slopeAccel = slopeAccelFromGravity(this.reading.x, this.reading.y, this.flipped);
+    const points = this.pointsRaw.map((p) => ({
+      yFeet: p.fraction * this.distanceFeet,
+      slopeAccel: slopeAccelFromGravity(p.gx, p.gy, this.flipped),
+    }));
     this.result = readGreen({
       distanceFeet: this.distanceFeet,
-      slopeAccel,
+      points,
       stimpFeet: GREEN_SPEEDS[this.speedKey].stimpFeet,
     });
-    this._drawBubble(slopeAccel);
+    // Bubble shows the ball-side reading — the one point every plan always
+    // has, and the most intuitive single number to anchor the visual on.
+    this._drawBubble(points[0].slopeAccel);
     this._renderResult();
   }
 
@@ -331,6 +431,18 @@ export class GreenView {
 
   // ── Result ───────────────────────────────────────────────────────────
 
+  /** "2.1% at the ball, 1.4% at the hole" — or just "1.8% slope" for a
+   *  single-point read, where per-point labelling would be redundant. */
+  _slopeSummary(r) {
+    const plan = this._plan();
+    if (r.pointSlopePercents.length === 1) {
+      return `${r.pointSlopePercents[0].toFixed(1)}% slope`;
+    }
+    return r.pointSlopePercents
+      .map((pct, i) => `${pct.toFixed(1)}% at ${plan.stepLabels[i]}`)
+      .join(', ');
+  }
+
   _renderResult() {
     const host = this._q('#gr-result');
     const r = this.result;
@@ -351,7 +463,7 @@ export class GreenView {
         </div>
         <canvas id="gr-path" style="width:100%;margin-top:10px"></canvas>
         <div class="note" style="margin-top:10px">
-          ${r.slopePercent.toFixed(1)}% slope, ${this.distanceFeet} ft, ${GREEN_SPEEDS[this.speedKey].label.toLowerCase()} green.
+          ${this._slopeSummary(r)}, ${this.distanceFeet} ft, ${GREEN_SPEEDS[this.speedKey].label.toLowerCase()} green.
           This is a physics simulation of a dying putt on this slope, not a felt estimate —
           real greens have grain, moisture and contour a flat-plane model cannot see, so
           treat it as a strong starting read, not gospel.

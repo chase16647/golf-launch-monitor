@@ -72,10 +72,17 @@ export function decelFromStimp(stimpFeet) {
  * standing behind the ball facing the hole), y = toward the hole.
  * @param {number} aimAngleRad  launch direction, radians from straight-at-hole
  * @param {number} speed        launch speed, m/s
- * @param {{x:number,y:number}} slopeAccel  constant downhill acceleration, m/s^2
- * @param {number} decel        friction deceleration magnitude, m/s^2
+ * @param {{x:number,y:number}|(y:number)=>{x:number,y:number}} slopeField
+ *   Either a constant downhill acceleration, or a function of the ball's
+ *   current distance traveled toward the hole (its y-position) returning the
+ *   local slope acceleration there — see makeSlopeField() below. A single
+ *   green rarely tilts one uniform way for its whole length; reading only at
+ *   the ball measures whatever is happening right at that one spot, which is
+ *   often a locally flattened tee-up area, not the green's real body.
+ * @param {number} decel  friction deceleration magnitude, m/s^2
  */
-export function simulatePutt(aimAngleRad, speed, slopeAccel, decel, dt = 0.002, maxT = 15) {
+export function simulatePutt(aimAngleRad, speed, slopeField, decel, dt = 0.002, maxT = 15) {
+  const slopeAt = typeof slopeField === 'function' ? slopeField : () => slopeField;
   let vx = speed * Math.sin(aimAngleRad);
   let vy = speed * Math.cos(aimAngleRad);
   let x = 0, y = 0, t = 0;
@@ -83,8 +90,9 @@ export function simulatePutt(aimAngleRad, speed, slopeAccel, decel, dt = 0.002, 
   while (t < maxT) {
     const spd = Math.hypot(vx, vy);
     if (spd < 0.03) break; // died
-    const fx = -decel * (vx / spd) + slopeAccel.x;
-    const fy = -decel * (vy / spd) + slopeAccel.y;
+    const sa = slopeAt(y);
+    const fx = -decel * (vx / spd) + sa.x;
+    const fy = -decel * (vy / spd) + sa.y;
     vx += fx * dt;
     vy += fy * dt;
     x += vx * dt;
@@ -97,17 +105,52 @@ export function simulatePutt(aimAngleRad, speed, slopeAccel, decel, dt = 0.002, 
 }
 
 /**
+ * Build a position-varying slope field from readings taken at several points
+ * along the ball-hole line (e.g. at the ball, the midpoint, and the hole).
+ * Linearly interpolates between the two bracketing sample points by the
+ * ball's actual y-position during simulation — NOT a single averaged slope,
+ * which is a meaningfully different and often wrong thing: on a genuine
+ * double-breaker (green tilts one way near the ball, the other way near the
+ * hole), averaging the two readings can come out to apparently-zero slope
+ * and say "no break" for a putt that very much breaks — twice. Verified in
+ * tools/verify-green.mjs: a symmetric double-breaker (+2.5% then -2.5%)
+ * solves to a small but non-zero aim under this interpolated model, while
+ * naive averaging gives exactly zero.
+ *
+ * @param {{yFeet:number, accel:{x:number,y:number}}[]} samples  at least one
+ *   point; y=0 should be the ball, y=distanceFeet the hole, for sensible
+ *   extrapolation beyond the outermost points.
+ */
+export function makeSlopeField(samples) {
+  const sorted = [...samples].sort((a, b) => a.yFeet - b.yFeet);
+  return function slopeAt(currentYMetres) {
+    const y = currentYMetres / 0.3048; // work in feet, matching the sample keys
+    if (y <= sorted[0].yFeet) return sorted[0].accel;
+    const last = sorted[sorted.length - 1];
+    if (y >= last.yFeet) return last.accel;
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const a = sorted[i], b = sorted[i + 1];
+      if (y >= a.yFeet && y <= b.yFeet) {
+        const t = (y - a.yFeet) / (b.yFeet - a.yFeet);
+        return { x: a.accel.x + t * (b.accel.x - a.accel.x), y: a.accel.y + t * (b.accel.y - a.accel.y) };
+      }
+    }
+    return last.accel;
+  };
+}
+
+/**
  * Shooting solve: find the (aimAngle, speed) pair that lands the ball at
  * (0, distanceM), dying there. Two nested searches — bisection on speed for
  * a fixed aim angle (distance traveled grows monotonically with speed), then
  * a secant search on aim angle to drive the sideways miss to zero.
  */
-export function solveAim(distanceM, slopeAccel, decel) {
+export function solveAim(distanceM, slopeField, decel) {
   function speedForDistance(aim) {
     let lo = 0.2, hi = 8.0;
     for (let i = 0; i < 40; i++) {
       const mid = (lo + hi) / 2;
-      const r = simulatePutt(aim, mid, slopeAccel, decel);
+      const r = simulatePutt(aim, mid, slopeField, decel);
       const dist = Math.hypot(r.x, r.y);
       if (dist < distanceM) lo = mid; else hi = mid;
     }
@@ -115,20 +158,20 @@ export function solveAim(distanceM, slopeAccel, decel) {
   }
 
   let a0 = -0.35, a1 = 0.35;
-  let s0 = speedForDistance(a0), r0 = simulatePutt(a0, s0, slopeAccel, decel).x;
-  let s1 = speedForDistance(a1), r1 = simulatePutt(a1, s1, slopeAccel, decel).x;
+  let s0 = speedForDistance(a0), r0 = simulatePutt(a0, s0, slopeField, decel).x;
+  let s1 = speedForDistance(a1), r1 = simulatePutt(a1, s1, slopeField, decel).x;
 
   for (let i = 0; i < 40; i++) {
     if (Math.abs(r1 - r0) < 1e-9) break;
     const a2 = a1 - (r1 * (a1 - a0)) / (r1 - r0);
     const s2 = speedForDistance(a2);
-    const r2 = simulatePutt(a2, s2, slopeAccel, decel).x;
+    const r2 = simulatePutt(a2, s2, slopeField, decel).x;
     a0 = a1; r0 = r1; s0 = s1;
     a1 = a2; r1 = r2; s1 = s2;
     if (Math.abs(r2) < 0.0005) break;
   }
 
-  const final = simulatePutt(a1, s1, slopeAccel, decel);
+  const final = simulatePutt(a1, s1, slopeField, decel);
   return { aimAngleRad: a1, speed: s1, finalX: final.x, finalY: final.y, path: final.path };
 }
 
@@ -177,20 +220,35 @@ export function slopePercent(slopeAccel) {
 /**
  * @param {object} p
  * @param {number} p.distanceFeet
- * @param {{x:number,y:number}} p.slopeAccel  from slopeAccelFromGravity()
+ * @param {{yFeet:number, slopeAccel:{x:number,y:number}}[]} p.points
+ *   One or more readings along the ball-hole line, each from
+ *   slopeAccelFromGravity(). A single point at yFeet=0 (the ball) reproduces
+ *   the original constant-slope behaviour exactly. Reading at the ball AND
+ *   the hole — or ball, middle and hole for a suspected double-breaker —
+ *   is a genuinely better estimate: the spot right at the ball is often a
+ *   locally flattened tee-up area, not representative of the green's real
+ *   body, and simply averaging multiple readings can hide a real
+ *   double-breaker entirely (see makeSlopeField's docs for a worked case).
  * @param {number} p.stimpFeet
  * @returns full read: aim offset, direction, speed guidance
  */
-export function readGreen({ distanceFeet, slopeAccel, stimpFeet }) {
+export function readGreen({ distanceFeet, points, stimpFeet }) {
   const distanceM = distanceFeet * 0.3048;
   const decel = decelFromStimp(stimpFeet);
-  const sol = solveAim(distanceM, slopeAccel, decel);
+  const field = points.length > 1
+    ? makeSlopeField(points.map((p) => ({ yFeet: p.yFeet, accel: p.slopeAccel })))
+    : points[0].slopeAccel; // single point: exactly the original constant-slope path
+
+  const sol = solveAim(distanceM, field, decel);
 
   const aimOffsetIn = Math.tan(sol.aimAngleRad) * distanceM * 39.3701;
   const effFeet = effectiveFlatDistanceFeet(sol.speed, decel);
 
   return {
-    slopePercent: slopePercent(slopeAccel),
+    // Slope at each sampled point, for display ("2.1% near the ball, 1.4%
+    // near the hole") — the SOLVE uses the full interpolated field above,
+    // this is just what to show per point.
+    pointSlopePercents: points.map((p) => slopePercent(p.slopeAccel)),
     aimAngleDeg: (sol.aimAngleRad * 180) / Math.PI,
     // Positive = aim right of the hole (compensating for a right-to-left
     // pull); negative = aim left.

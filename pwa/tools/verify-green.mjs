@@ -5,7 +5,7 @@
 //   node tools/verify-green.mjs
 
 import {
-  decelFromStimp, simulatePutt, solveAim, effectiveFlatDistanceFeet,
+  decelFromStimp, simulatePutt, solveAim, effectiveFlatDistanceFeet, makeSlopeField,
 } from '../js/putting/greenread.js';
 
 const g = 9.80665;
@@ -84,4 +84,31 @@ console.log('\n=== Break by distance and slope (reference table) ===\n');
       console.log(`${String(feet).padStart(2)} ft, ${pct}% -> aim ${aimIn.toFixed(1)} in`);
     }
   }
+}
+
+console.log('\n=== Multi-point reading: why the ball alone is not enough ===\n');
+{
+  const decel = decelFromStimp(10.5);
+  const D = 20 * ftToM;
+
+  console.log('A uniform field (every point reads the same) matches the old');
+  console.log('constant-slope path exactly — no regression from adding this:');
+  const uniform = { x: g * 0.02, y: 0 };
+  const asConstant = solveAim(D, uniform, decel);
+  const asField = solveAim(D, makeSlopeField([{ yFeet: 0, accel: uniform }, { yFeet: 20, accel: uniform }]), decel);
+  console.log(`  constant: ${((asConstant.aimAngleRad * 180) / Math.PI).toFixed(6)} deg`);
+  console.log(`  field:    ${((asField.aimAngleRad * 180) / Math.PI).toFixed(6)} deg`);
+
+  console.log('\nA double-breaker: breaks right near the ball, left near the hole.');
+  console.log('Naively averaging the two readings gives exactly zero — "no break" —');
+  console.log('for a green that genuinely breaks twice. The field-based read does not:');
+  const field = makeSlopeField([
+    { yFeet: 0, accel: { x: g * 0.025, y: 0 } },
+    { yFeet: 10, accel: { x: 0, y: 0 } },
+    { yFeet: 20, accel: { x: -g * 0.025, y: 0 } },
+  ]);
+  const fieldResult = solveAim(D, field, decel);
+  const naiveAverage = solveAim(D, { x: 0, y: 0 }, decel);
+  console.log(`  naive average of the two readings: ${((naiveAverage.aimAngleRad * 180) / Math.PI).toFixed(4)} deg (wrong)`);
+  console.log(`  ball+mid+hole field:                ${((fieldResult.aimAngleRad * 180) / Math.PI).toFixed(4)} deg`);
 }
