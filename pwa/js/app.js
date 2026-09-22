@@ -10,7 +10,8 @@ import { AlignView } from './ui/alignview.js';
 import { CaptureView } from './ui/captureview.js';
 import { AnalyzeView } from './ui/analyzeview.js';
 import { CourseView, currentHandicapIndex } from './ui/courseview.js';
-import { allRounds } from './scorecard/store.js';
+import { allRounds, deleteRound } from './scorecard/store.js';
+import { roundStats } from './scorecard/handicap.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -34,23 +35,84 @@ const state = {
 state.ballSpeed = store.getSetting('ballSpeed', defaultBallSpeed(state.club));
 state.launch = store.getSetting('launch', defaultLaunch(state.club));
 
-// ── Tabs ────────────────────────────────────────────────────────────────────
+// ── Navigation ───────────────────────────────────────────────────────────────
+//
+// Two levels, not one flat list of tabs. The bottom bar picks a GROUP (Home,
+// Play, Course, Stats, Setup — five things a golfer actually thinks in terms
+// of); a group with more than one real screen inside it shows a segmented
+// control at its top to switch between them. This exists because the app grew
+// past seven flat tabs and finding anything meant reading every icon — grouping
+// by "what this is for" fixes that without touching any of the underlying view
+// classes, which are unchanged.
 
-function showView(name) {
-  $$('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${name}`));
-  $$('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
+const GROUPS = {
+  home: ['home'],
+  play: ['capture', 'analyze'],
+  'course-group': ['course'],
+  stats: ['bag', 'range', 'rounds'],
+  'setup-group': ['align', 'setup'],
+};
+
+/** Which group a subview lives in, the inverse of GROUPS — built once. */
+const GROUP_OF = {};
+for (const [group, subs] of Object.entries(GROUPS)) {
+  for (const s of subs) GROUP_OF[s] = group;
+}
+
+const SUBTITLES = {
+  home: 'Everything, from one place',
+  capture: 'Record and replay the strike',
+  analyze: 'Frame-by-frame, any video',
+  course: 'GPS yardages on a satellite map',
+  align: 'Get the same rig every time',
+  range: 'Dispersion & targets',
+  bag: 'Your yardage book',
+  rounds: 'Scorecards & handicap',
+  setup: 'Rig, limits & calculator',
+};
+
+/** Last subview shown in each group, so returning to a group (via the tab bar
+ *  or a Home shortcut) restores what you were looking at rather than always
+ *  resetting to the first screen. */
+const lastSub = { play: 'capture', stats: 'bag', 'setup-group': 'align' };
+
+function showGroup(group, preferredSub) {
+  $$('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${group}`));
+  $$('.tab').forEach((t) => t.classList.toggle('active', t.dataset.group === group));
+
+  const subs = GROUPS[group];
+  const sub = preferredSub && subs.includes(preferredSub) ? preferredSub : (lastSub[group] || subs[0]);
+  showSub(sub);
+}
+
+function showSub(name) {
+  const group = GROUP_OF[name];
+  lastSub[group] = name;
+
+  const groupEl = $(`#view-${group}`);
+  groupEl.querySelectorAll('.subview').forEach((el) => el.classList.toggle('active', el.id === `view-${name}`));
+  groupEl.querySelectorAll('.group-seg button[data-sub]').forEach((b) => b.classList.toggle('active', b.dataset.sub === name));
+
   $('#app-subtitle').textContent = SUBTITLES[name] || '';
+  mountSubview(name);
+
+  // Release the camera whenever you leave Capture — otherwise the indicator
+  // light stays on and the battery drains through a whole range session.
+  if (name !== 'capture') captureView.recorder.stop();
+  if (name !== 'course') courseView.unmount();
+
+  window.scrollTo({ top: 0, behavior: 'instant' });
+}
+
+function mountSubview(name) {
+  if (name === 'home') renderHome();
   if (name === 'bag') renderBag();
   if (name === 'range') renderRange();
+  if (name === 'rounds') renderRounds();
   if (name === 'align') alignView.mount();
   if (name === 'capture') captureView.mount();
   if (name === 'analyze') analyzeView.mount();
   if (name === 'course') courseView.mount();
-  // Release the camera when you navigate away — otherwise the indicator light
-  // stays on and the battery drains through a whole range session.
-  if (name !== 'capture') captureView.recorder.stop();
-  if (name !== 'course') courseView.unmount();
-  window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
 const alignView = new AlignView(document.getElementById('view-align'));
@@ -60,17 +122,148 @@ const analyzeView = new AnalyzeView(document.getElementById('view-analyze'), {
 });
 const courseView = new CourseView(document.getElementById('view-course'));
 
-const SUBTITLES = {
-  capture: 'Record and replay the strike',
-  analyze: 'Frame-by-frame, any video',
-  course: 'GPS yardages on a satellite map',
-  shot: 'Flight model · fitted to tour data',
-  align: 'Get the same rig every time',
-  camera: 'What your device can actually do',
-  range: 'Dispersion & targets',
-  bag: 'Your yardage book',
-  setup: 'Rig, limits & calculator',
-};
+// ── Home ─────────────────────────────────────────────────────────────────────
+//
+// One screen that surfaces the important bit of every section, so "where do I
+// go to do X" stops being a question. Read-only summaries only — every number
+// here is computed from data the other screens already own, nothing new is
+// stored from Home itself.
+
+function renderHome() {
+  const host = $('#home-content');
+  const shots = store.allShots();
+  const lastShot = shots[0];
+  const book = store.yardageBook();
+  const rounds = allRounds();
+  const handicap = currentHandicapIndex();
+
+  const actions = `
+    <div class="btn-row">
+      <button class="btn" id="home-capture">Start swing capture</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn secondary" id="home-round">Start a round</button>
+      <button class="btn secondary" id="home-import" style="max-width:150px">Import video</button>
+    </div>`;
+
+  const lastShotCard = lastShot ? `
+    <div class="card">
+      <h3 class="card-title">Last shot</h3>
+      <div class="shot-item" style="margin:0">
+        <div class="club-badge">${CLUBS[lastShot.club].short}</div>
+        <div>
+          <div style="font-weight:600;font-size:15px">${SHAPES[lastShot.shape].name}</div>
+          <div style="font-size:11px;color:var(--text-3)">${Math.round(lastShot.ballSpeedMPH)} mph · ${lastShot.launchAngleDeg.toFixed(1)}°</div>
+        </div>
+        <div class="shot-carry" style="color:${shapeColor(lastShot.shape)}">${Math.round(lastShot.carryYards)}<span style="font-size:12px;color:var(--text-3)"> yd</span></div>
+      </div>
+    </div>` : '';
+
+  const lastRound = rounds[0];
+  const lastRoundStats = lastRound ? roundStats(lastRound.holes) : null;
+
+  const summaryTiles = `
+    <div class="metrics three">
+      <div class="tile compact">
+        <div class="tile-label">Handicap</div>
+        <div class="tile-value">${handicap != null ? handicap.toFixed(1) : '—'}</div>
+      </div>
+      <div class="tile compact">
+        <div class="tile-label">Shots logged</div>
+        <div class="tile-value">${shots.length}</div>
+      </div>
+      <div class="tile compact">
+        <div class="tile-label">Rounds</div>
+        <div class="tile-value">${rounds.length}</div>
+      </div>
+    </div>`;
+
+  const lastRoundCard = lastRound && lastRoundStats ? `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <h3 class="card-title" style="margin-bottom:2px">Last round</h3>
+          <div style="font-size:13px;color:var(--text-2)">${escapeHtmlHome(lastRound.courseName)}</div>
+        </div>
+        <div style="font-family:var(--font-round);font-size:26px;font-weight:700;color:var(--primary)">
+          ${lastRoundStats.toPar > 0 ? '+' : ''}${lastRoundStats.toPar === 0 ? 'E' : lastRoundStats.toPar}
+        </div>
+      </div>
+    </div>` : '';
+
+  const topClubsCard = book.length ? `
+    <div class="card">
+      <h3 class="card-title">Your bag</h3>
+      ${book.slice(0, 3).map((a) => `
+        <div class="row">
+          <span class="row-key">${a.name}</span>
+          <span class="row-val">${Math.round(a.medianCarryYards)} yd</span>
+        </div>`).join('')}
+      <button class="btn secondary" id="home-see-bag" style="margin-top:10px;padding:10px;font-size:13px">See full yardage book</button>
+    </div>` : '';
+
+  const emptyState = !shots.length && !rounds.length ? `
+    <div class="note">
+      <strong>Nothing logged yet.</strong> Start a swing capture, or open Play →
+      Analyze to import a video you already shot. Everything you save shows up
+      here.
+    </div>` : '';
+
+  host.innerHTML = `
+    ${actions}
+    ${emptyState}
+    ${summaryTiles}
+    ${lastShotCard}
+    ${lastRoundCard}
+    ${topClubsCard}
+  `;
+
+  $('#home-capture').onclick = () => showGroup('play', 'capture');
+  $('#home-import').onclick = () => showGroup('play', 'analyze');
+  $('#home-round').onclick = () => showGroup('course-group', 'course');
+  $('#home-see-bag')?.addEventListener('click', () => showGroup('stats', 'bag'));
+}
+
+function escapeHtmlHome(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// ── Rounds (Stats > Rounds) ──────────────────────────────────────────────────
+
+function renderRounds() {
+  const host = $('#rounds-content');
+  const rounds = allRounds();
+
+  if (!rounds.length) {
+    host.innerHTML = '<div class="empty"><div class="empty-title">No rounds yet</div>Play a round from the Course tab and it shows up here.</div>';
+    return;
+  }
+
+  host.innerHTML = rounds.map((r) => {
+    const stats = roundStats(r.holes);
+    if (!stats) return '';
+    const date = new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    return `
+      <div class="shot-item" data-round="${r.id}">
+        <div>
+          <div style="font-weight:600;font-size:15px">${escapeHtmlHome(r.courseName)}</div>
+          <div style="font-size:11px;color:var(--text-3)">${date} · ${stats.holesPlayed} holes · GIR ${Math.round(stats.girPct)}%</div>
+        </div>
+        <div class="shot-carry" style="color:${stats.toPar <= 0 ? 'var(--primary)' : 'var(--text)'}">
+          ${stats.totalStrokes}<span style="font-size:12px;color:var(--text-3)"> (${stats.toPar > 0 ? '+' : ''}${stats.toPar === 0 ? 'E' : stats.toPar})</span>
+        </div>
+      </div>`;
+  }).join('') + `
+    <button class="btn danger" id="btn-clear-rounds" style="margin-top:10px">Delete all rounds</button>`;
+
+  $('#btn-clear-rounds').onclick = () => {
+    if (confirm('Delete every saved round? This cannot be undone.')) {
+      rounds.forEach((r) => deleteRound(r.id));
+      renderRounds();
+    }
+  };
+}
 
 // ── Shot view ───────────────────────────────────────────────────────────────
 
@@ -433,7 +626,10 @@ function bindInputs() {
   $('#btn-save').onclick = saveShot;
   $('#btn-probe').onclick = runCameraProbe;
 
-  $$('.tab').forEach((t) => (t.onclick = () => showView(t.dataset.tab)));
+  $$('.tab').forEach((t) => (t.onclick = () => showGroup(t.dataset.group)));
+
+  // The seg control at the top of each multi-screen group (Play/Stats/Setup).
+  $$('.group-seg button[data-sub]').forEach((b) => (b.onclick = () => showSub(b.dataset.sub)));
 }
 
 function init() {
@@ -446,7 +642,7 @@ function init() {
   bindInputs();
   syncInputs();
   run();
-  showView('capture');
+  showGroup('home');
 
   window.addEventListener('resize', () => {
     drawTrajectory();

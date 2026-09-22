@@ -23,39 +23,65 @@
 
 <main>
 
-<!-- ══ CAPTURE ═══════════════════════════════════════════════════════════ -->
-<section class="view active" id="view-capture"></section>
+<!-- ══ HOME ══════════════════════════════════════════════════════════════ -->
+<section class="view active" id="view-home">
+  <div id="home-content"></div>
+</section>
 
-<!-- ══ ANALYZE ═══════════════════════════════════════════════════════════ -->
-<section class="view" id="view-analyze"></section>
+<!-- ══ PLAY (Capture + Analyze) ═════════════════════════════════════════ -->
+<section class="view" id="view-play">
+  <div class="seg group-seg" id="play-seg">
+    <button data-sub="capture" class="active">Capture</button>
+    <button data-sub="analyze">Analyze</button>
+  </div>
+  <div class="subview active" id="view-capture"></div>
+  <div class="subview" id="view-analyze"></div>
+</section>
 
 <!-- ══ COURSE ════════════════════════════════════════════════════════════ -->
-<section class="view" id="view-course"></section>
+<section class="view" id="view-course-group">
+  <div class="subview active" id="view-course"></div>
+</section>
 
-
-<!-- ══ RANGE ═════════════════════════════════════════════════════════════ -->
-<section class="view" id="view-range">
-  <div id="range-stats"></div>
-  <div class="card">
-    <h3 class="card-title">Landing pattern</h3>
-    <canvas id="c-dispersion"></canvas>
-    <div style="font-size:12px;color:var(--text-3);margin-top:8px">
-      Dashed ellipse is one standard deviation. Colour shows shot shape.
-    </div>
+<!-- ══ STATS (Bag + Range + Rounds) ═════════════════════════════════════ -->
+<section class="view" id="view-stats">
+  <div class="seg group-seg" id="stats-seg">
+    <button data-sub="bag" class="active">Yardages</button>
+    <button data-sub="range">Dispersion</button>
+    <button data-sub="rounds">Rounds</button>
   </div>
-  <div id="range-recent"></div>
+
+  <div class="subview active" id="view-bag">
+    <div id="bag-content"></div>
+  </div>
+
+  <div class="subview" id="view-range">
+    <div id="range-stats"></div>
+    <div class="card">
+      <h3 class="card-title">Landing pattern</h3>
+      <canvas id="c-dispersion"></canvas>
+      <div style="font-size:12px;color:var(--text-3);margin-top:8px">
+        Dashed ellipse is one standard deviation. Colour shows shot shape.
+      </div>
+    </div>
+    <div id="range-recent"></div>
+  </div>
+
+  <div class="subview" id="view-rounds">
+    <div id="rounds-content"></div>
+  </div>
 </section>
 
-<!-- ══ BAG ═══════════════════════════════════════════════════════════════ -->
-<section class="view" id="view-bag">
-  <div id="bag-content"></div>
-</section>
+<!-- ══ SETUP (Align + Guide) ═════════════════════════════════════════════ -->
+<section class="view" id="view-setup-group">
+  <div class="seg group-seg" id="setup-seg">
+    <button data-sub="align" class="active">Align</button>
+    <button data-sub="setup">Guide</button>
+  </div>
 
-<!-- ══ ALIGN ═════════════════════════════════════════════════════════════ -->
-<section class="view" id="view-align"></section>
+  <div class="subview active" id="view-align"></div>
 
-<!-- ══ SETUP ═════════════════════════════════════════════════════════════ -->
-<section class="view" id="view-setup">
+  <div class="subview" id="view-setup">
 
   <div class="note good">
     <strong>Short answer:</strong> 5 ft away, phone at ball height, square to the target
@@ -295,38 +321,31 @@
     calibration and your swing invalidates the scale, and nothing downstream can detect a
     wrong answer that is self-consistent.
   </div>
+  </div>
 </section>
 
 </main>
 
 <nav class="tabbar">
-  <button class="tab active" data-tab="capture">
+  <button class="tab active" data-group="home">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>
+    Home
+  </button>
+  <button class="tab" data-group="play">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 8h4l2-2h6l2 2h4v12H3z"/><circle cx="12" cy="13" r="3.5"/></svg>
-    Capture
+    Play
   </button>
-  <button class="tab" data-tab="analyze">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M9 9l6 3-6 3z" fill="currentColor" stroke="none"/></svg>
-    Analyze
-  </button>
-  <button class="tab" data-tab="course">
+  <button class="tab" data-group="course-group">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 21V4"/><path d="M5 4h13l-3 4 3 4H5"/></svg>
     Course
   </button>
-  <button class="tab" data-tab="bag">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M6 8h12l-1 12H7L6 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>
-    Bag
+  <button class="tab" data-group="stats">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 20V10M12 20V4M20 20v-7"/></svg>
+    Stats
   </button>
-  <button class="tab" data-tab="range">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1"/></svg>
-    Range
-  </button>
-  <button class="tab" data-tab="align">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M8 9l8 6"/></svg>
-    Align
-  </button>
-  <button class="tab" data-tab="setup">
+  <button class="tab" data-group="setup-group">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/></svg>
-    Guide
+    Setup
   </button>
 </nav>
 

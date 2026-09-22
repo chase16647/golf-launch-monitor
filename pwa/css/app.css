@@ -117,7 +117,7 @@ main {
   border: none;
   color: var(--text-3);
   font-family: var(--font-round);
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 600;
   padding: 4px 0;
   cursor: pointer;
@@ -128,7 +128,7 @@ main {
   gap: 3px;
   transition: color 0.18s;
 }
-.tab svg { width: 20px; height: 20px; stroke-width: 1.8; flex-shrink: 0; }
+.tab svg { width: 22px; height: 22px; stroke-width: 1.8; flex-shrink: 0; }
 .tab.active { color: var(--primary); }
 
 /* ── Cards ──────────────────────────────────────────────────────────────── */
@@ -338,6 +338,24 @@ canvas { display: block; width: 100%; border-radius: 12px; }
   cursor: pointer;
 }
 .seg button.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+
+/* Group-level segmented control at the top of Play/Stats/Setup, switching
+   between the real screens nested inside. Slightly taller than the inline
+   .seg used within a card (e.g. the trajectory Side/Top toggle), since this
+   one is a primary navigation control, not a secondary in-card option. */
+.group-seg {
+  margin-bottom: 14px;
+  padding: 3px;
+}
+.group-seg button {
+  padding: 10px 10px;
+  font-size: 14px;
+}
+
+/* A grouped tab (Play/Stats/Setup) holds several real screens; only one is
+   shown at a time, picked by .group-seg above. */
+.subview { display: none; }
+.subview.active { display: block; animation: fade 0.2s ease; }
 
 /* ── Tables / rows ──────────────────────────────────────────────────────── */
 
