@@ -55,8 +55,10 @@ bare word `test` as a module name instead of a directory.)
 | Tab | What it is |
 |---|---|
 | **Capture** | Live camera, auto-trigger on the strike, and a frame-by-frame replay with a tracer. This is the part of a launch monitor a browser genuinely can do. |
+| **Analyze** | A real frame-by-frame scrubber for ANY video — including slo-mo shot with the stock Camera app — plus a GolfTec-style skeleton overlay with live spine/shoulder/hip angles and an address-position ghost comparison. |
+| **Course** | GPS round tracking on a free satellite map. Auto-detects tee/green from OpenStreetMap where the course is mapped; otherwise mark the tee and pin once and it's remembered forever. Scorecard, stats, handicap index, Skins/Nassau. |
 | **Range** | Landing pattern with a one-sigma dispersion ellipse, coloured by shot shape. |
-| **Bag** | Yardage book built from saved shots, with carry gapping and warnings for gaps over 18 yd or under 6 yd. |
+| **Bag** | Yardage book built from saved shots, carry gapping, and your Handicap Index once you have 3+ rounds logged with a course rating/slope. |
 | **Align** | Live tilt/lean/squareness from the phone's motion sensors, target-line capture, and saved setup profiles so you reproduce the same rig every time. |
 | **Guide** | Rig geometry, the error budget worst-first, a camera test that measures what your device delivers, and the flight calculator. |
 
@@ -140,6 +142,92 @@ is **ShotVision**, and it works because it is a *native* iOS app with 240 fps
 Total cost: nothing. The $99 Apple Developer Program is only needed for
 TestFlight or the App Store.
 
+## Analyze: any video, real frame stepping
+
+The stock Camera app's scrub bar is a finger-drag over the whole clip — it is
+genuinely hard to land on one specific frame. This is the fix: import a video
+(any format Safari can play, including 120/240fps slo-mo) and step through it
+one frame at a time with dedicated buttons, not a drag gesture. There is no
+way to know an arbitrary imported file's real per-frame timing cross-browser,
+so you tell it the frame rate you shot at (same thing iOS already showed you
+in the Camera app's slo-mo picker) and it steps in exact multiples of that.
+
+**Verified working end-to-end**: a real recorded video pushed through the
+import path in the browser correctly reported 42 frames for a ~1.4s clip at a
+30fps step, and frame-stepping/jump-to-frame both worked with zero errors.
+
+### The pose overlay — what it actually is
+
+On-device pose detection (MediaPipe, WASM, no server, ~5.7MB model fetched
+once and cached). Draws a skeleton and computes spine tilt, shoulder tilt, hip
+tilt, and head sway relative to an address position you mark.
+
+**What it is not**: GolfTec uses multiple synchronised cameras or true motion
+capture. This is one camera, so every angle is a 2D projection of a 3D
+motion — a face-on camera reads spine tilt and sway well but foreshortens
+shoulder turn; down-the-line does the opposite. There is no single camera
+position that reads everything correctly, because that needs a second camera.
+The app labels every angle "approx." and is most useful compared against your
+own address position, not as an absolute number. Confidence also drops hard
+through the downswing — motion blur at swing speed degrades keypoint
+detection exactly when you most want it.
+
+**Verified working**: the model fetch returns a real 200 from Google's model
+CDN, the WASM pipeline runs without throwing, and it correctly reports "no
+pose found" on a synthetic test image with no person in it rather than
+hallucinating a false positive.
+
+## Course: free satellite map + real course data where it exists
+
+Three ways a hole's tee/green get filled in, tried in order:
+
+1. **OpenStreetMap has this course tagged** → auto-detected from GPS, zero
+   taps. Real surveyed tee/green/bunker/hazard shapes, for courses that have
+   been mapped by OSM contributors.
+2. **You've played this exact hole before in this app** → remembered forever
+   from a rounded GPS key, even when OSM has nothing.
+3. **Neither** → mark the tee, walk to the pin, mark that once. It is
+   remembered after, so this is a one-time cost per hole, not per round.
+
+Satellite imagery is Esri World Imagery (free, no key). Course geometry is
+OpenStreetMap via the free Overpass API. Both cost nothing and need no
+account.
+
+**Coverage, stated plainly**: OSM's golf tagging is volunteer-contributed.
+Well-known and public courses are often mapped in real detail. Plenty of
+smaller or private courses have nothing tagged at all — you get the manual
+fallback for those, which still works and still gets remembered.
+
+**A verification gap worth knowing about**: the public Overpass mirrors block
+requests from datacenter/cloud IPs as anti-scraping protection, which is
+exactly what this looked like in development, so the query returned 406 and
+could not be tested end-to-end from here. It is standard Overpass QL and
+should work normally from a phone's browser — ordinary residential/mobile
+traffic — but **this specific piece needs testing on a real device**. Every
+other part of the pipeline (satellite tiles, the GPS round flow, remembered
+holes, scorecard, handicap) was verified directly, including two real bugs
+found and fixed while testing: a null map-centre crash during the loading
+phase, and a fallback gate that silently broke when fixing the first bug (it
+checked `!tee` for "no source resolved yet", which stopped being true once
+`tee` was given a placeholder default — fixed by gating on `source` instead).
+
+### Scorecard, handicap, and games
+
+`js/scorecard/handicap.js` implements the standard WHS differential and index
+formula — `(score − rating) × 113 / slope`, best-N-of-last-20 averaged and
+scaled by 0.96 — verified against a published worked example. Not the full
+official spec (no Playing Conditions Calculation, no exceptional-score
+capping, both of which need USGA's live data feed), but the core formula every
+golfer recognises as "my handicap." Skins and Nassau are pure scoring math,
+entered by one person for the group — no accounts, no server.
+
+### What's deliberately not here
+
+No social feed, no leaderboards — those need a backend server, which this
+app does not have and was not asked to have. No licensed hazard/green-contour
+data for every course on Earth — that needs a paid provider. Both are honest
+scope cuts, not oversights.
+
 ## Physics
 
 Same model as the Swift app, ported and independently verified:
@@ -174,5 +262,8 @@ Bugs caught during the build, all now covered by tests:
 - **Service worker is unverified.** It registers correctly in real browsers but
   could not be tested in the embedded pane used during development, so treat
   offline mode as "should work" rather than "confirmed".
-- No course mode yet (the native app has one).
-- Shot entry is manual by design — see *What it is NOT* above.
+- **Overpass (OSM course data) is unverified from this environment** — see the
+  Course section above. Test it on a phone and report what you see.
+- Shot entry on the calculator is manual by design — see *What it is NOT* above.
+- No social feed or leaderboards (needs a backend); no paid course-data license
+  for hazard/green-contour accuracy on every course.

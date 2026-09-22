@@ -49,3 +49,48 @@ Chase wants a ShotVision-style launch monitor on his iPhone 17 Pro that measures
 
 ## Working with Chase
 Terse, dictates, on Windows. Wants me to run things ("u run"), not hand him instructions. Verifies by using the app, distrusts unproven claims, cost-sensitive.
+
+
+## Update 2026-09-22: big PWA feature push, native sideloading parked
+
+Chase asked to park the Sideloadly debugging loop (device-specific, hard to
+debug blind, gemini already tried 3x) and instead build out the PWA toward
+"every feature 18Birdies has." Scoped honestly rather than built blindly:
+skipped anything needing a backend server (social feed, leaderboards) or a
+paid course-data license (hazard-accurate satellite maps everywhere).
+
+Shipped, all free/client-only:
+- **Analyze tab**: real frame-by-frame video scrubber for ANY imported video
+  (fixes "I hate scrolling the Camera app"), plus a GolfTec-style pose overlay
+  (MediaPipe, on-device, ~5.7MB model cached after first use) with spine/
+  shoulder/hip angles and an address-position ghost comparison. Both verified
+  working end-to-end in-browser (real recorded video correctly stepped
+  frame-by-frame; pose model fetched, ran, and correctly returned "no pose"
+  on a person-less test image).
+- **Course tab**: GPS round tracking on a free Esri satellite map, with real
+  tee/green/hazard geometry from OpenStreetMap where a course is mapped
+  (Overpass API), falling back to walk-and-mark (remembered forever after)
+  where it isn't. Full round flow verified end-to-end (start -> mark pin ->
+  mark shot -> hole out -> advance -> remembered-hole recall -> finish ->
+  save -> handicap index). Found and fixed 2 real bugs during testing: a null
+  map-centre crash, and a fallback gate that broke while fixing the first bug.
+- **Scorecard/handicap**: real WHS-style differential/index formula (verified
+  against a published worked example), round stats (GIR/fairways/putts),
+  Skins and Nassau side games. Bag tab shows the handicap index once 3+ rounds
+  are logged with a course rating/slope.
+
+**Could NOT verify from this sandbox**: the Overpass (OpenStreetMap) course
+data query. Overpass's public mirrors block datacenter/cloud IPs as
+anti-scraping protection, and that's what this dev environment looks like to
+them (406 on every request, even a bare GET to the server root). This should
+work fine from a real phone browser (ordinary residential/mobile traffic) but
+needs testing on-device — ask Chase what he sees when he opens Course at an
+actual course. Esri satellite tiles WERE verified (plain HTTPS GET, real
+image back, no key needed).
+
+51/51 JS tests passing (added gps.test.mjs, handicap.test.mjs,
+coursedata.test.mjs for the new pure-logic modules). New tabs pushed the tab
+bar to 7; CSS shrunk slightly to fit (see css/app.css .tab rules).
+
+Native iOS / Sideloadly debugging is explicitly ON HOLD per Chase's request,
+not abandoned — pick it back up when he wants to return to it.

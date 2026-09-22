@@ -8,6 +8,9 @@ import { probeCamera, capabilityRows } from './camera.js';
 import { drawSideProfile, drawTopDown, drawDispersion, drawCurveSketch, shapeColor } from './ui/charts.js';
 import { AlignView } from './ui/alignview.js';
 import { CaptureView } from './ui/captureview.js';
+import { AnalyzeView } from './ui/analyzeview.js';
+import { CourseView, currentHandicapIndex } from './ui/courseview.js';
+import { allRounds } from './scorecard/store.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -41,17 +44,26 @@ function showView(name) {
   if (name === 'range') renderRange();
   if (name === 'align') alignView.mount();
   if (name === 'capture') captureView.mount();
+  if (name === 'analyze') analyzeView.mount();
+  if (name === 'course') courseView.mount();
   // Release the camera when you navigate away — otherwise the indicator light
   // stays on and the battery drains through a whole range session.
   if (name !== 'capture') captureView.recorder.stop();
+  if (name !== 'course') courseView.unmount();
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
 const alignView = new AlignView(document.getElementById('view-align'));
 const captureView = new CaptureView(document.getElementById('view-capture'));
+const analyzeView = new AnalyzeView(document.getElementById('view-analyze'), {
+  getLastClip: () => (captureView.recorder.clip.length ? { recorder: captureView.recorder } : null),
+});
+const courseView = new CourseView(document.getElementById('view-course'));
 
 const SUBTITLES = {
   capture: 'Record and replay the strike',
+  analyze: 'Frame-by-frame, any video',
+  course: 'GPS yardages on a satellite map',
   shot: 'Flight model · fitted to tour data',
   align: 'Get the same rig every time',
   camera: 'What your device can actually do',
@@ -290,12 +302,31 @@ function renderRange() {
 
 // ── Bag view ────────────────────────────────────────────────────────────────
 
+function renderHandicapCard() {
+  const rounds = allRounds();
+  if (!rounds.length) return '';
+  const index = currentHandicapIndex();
+  const withRating = rounds.filter((r) => r.rating != null && r.slope != null).length;
+
+  return `
+    <div class="card">
+      <h3 class="card-title">Handicap</h3>
+      <div class="metrics three">
+        <div class="tile compact"><div class="tile-label">Index</div><div class="tile-value primary">${index != null ? index.toFixed(1) : '—'}</div></div>
+        <div class="tile compact"><div class="tile-label">Rounds</div><div class="tile-value">${rounds.length}</div></div>
+        <div class="tile compact"><div class="tile-label">Last</div><div class="tile-value" style="font-size:18px">${rounds[0].totalStrokes ?? '—'}</div></div>
+      </div>
+      ${index == null ? `<div class="note" style="margin-top:12px">Needs at least 3 rounds with a course rating and slope entered (${withRating} so far) to compute an index.</div>` : ''}
+    </div>`;
+}
+
 function renderBag() {
   const book = store.yardageBook();
   const host = $('#bag-content');
+  const handicapCard = renderHandicapCard();
 
   if (!book.length) {
-    host.innerHTML = '<div class="empty"><div class="empty-title">Your bag is empty</div>Save a few shots and your yardages will build here.</div>';
+    host.innerHTML = handicapCard || '<div class="empty"><div class="empty-title">Your bag is empty</div>Save a few shots and your yardages will build here.</div>';
     return;
   }
 
@@ -336,6 +367,7 @@ function renderBag() {
     </div>` : '';
 
   host.innerHTML = `
+    ${handicapCard}
     <div class="card"><h3 class="card-title">Carry gapping</h3>${chart}</div>
     ${rows}
     ${gapHtml}
