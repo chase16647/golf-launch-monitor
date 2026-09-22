@@ -286,9 +286,6 @@ Bugs caught during the build, all now covered by tests:
 
 ## Known gaps
 
-- **Service worker is unverified.** It registers correctly in real browsers but
-  could not be tested in the embedded pane used during development, so treat
-  offline mode as "should work" rather than "confirmed".
 - **Overpass (OSM course data) is unverified from this environment** — see the
   Course section above. Test it on a phone and report what you see.
 - Shot entry on the calculator is manual by design — see *What it is NOT* above.
