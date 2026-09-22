@@ -10,6 +10,7 @@ import { AlignView } from './ui/alignview.js';
 import { CaptureView } from './ui/captureview.js';
 import { AnalyzeView } from './ui/analyzeview.js';
 import { CourseView, currentHandicapIndex } from './ui/courseview.js';
+import { GreenView } from './ui/greenview.js';
 import { allRounds, deleteRound } from './scorecard/store.js';
 import { roundStats } from './scorecard/handicap.js';
 
@@ -49,6 +50,7 @@ const GROUPS = {
   home: ['home'],
   play: ['capture', 'analyze'],
   'course-group': ['course'],
+  'green-group': ['green'],
   stats: ['bag', 'range', 'rounds'],
   'setup-group': ['align', 'setup'],
 };
@@ -64,6 +66,7 @@ const SUBTITLES = {
   capture: 'Record and replay the strike',
   analyze: 'Frame-by-frame, any video',
   course: 'GPS yardages on a satellite map',
+  green: 'Real slope, real physics, real aim',
   align: 'Get the same rig every time',
   range: 'Dispersion & targets',
   bag: 'Your yardage book',
@@ -100,6 +103,7 @@ function showSub(name) {
   // light stays on and the battery drains through a whole range session.
   if (name !== 'capture') captureView.recorder.stop();
   if (name !== 'course') courseView.unmount();
+  if (name !== 'green') greenView.unmount();
 
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
@@ -113,6 +117,7 @@ function mountSubview(name) {
   if (name === 'capture') captureView.mount();
   if (name === 'analyze') analyzeView.mount();
   if (name === 'course') courseView.mount();
+  if (name === 'green') greenView.mount();
 }
 
 const alignView = new AlignView(document.getElementById('view-align'));
@@ -121,6 +126,7 @@ const analyzeView = new AnalyzeView(document.getElementById('view-analyze'), {
   getLastClip: () => (captureView.recorder.clip.length ? { recorder: captureView.recorder } : null),
 });
 const courseView = new CourseView(document.getElementById('view-course'));
+const greenView = new GreenView(document.getElementById('view-green'));
 
 // ── Home ─────────────────────────────────────────────────────────────────────
 //

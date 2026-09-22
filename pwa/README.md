@@ -52,15 +52,17 @@ bare word `test` as a module name instead of a directory.)
 
 ## What it does
 
-| Tab | What it is |
-|---|---|
-| **Capture** | Live camera, auto-trigger on the strike, and a frame-by-frame replay with a tracer. This is the part of a launch monitor a browser genuinely can do. |
-| **Analyze** | A real frame-by-frame scrubber for ANY video — including slo-mo shot with the stock Camera app — plus a GolfTec-style skeleton overlay with live spine/shoulder/hip angles and an address-position ghost comparison. |
-| **Course** | GPS round tracking on a free satellite map. Auto-detects tee/green from OpenStreetMap where the course is mapped; otherwise mark the tee and pin once and it's remembered forever. Scorecard, stats, handicap index, Skins/Nassau. |
-| **Range** | Landing pattern with a one-sigma dispersion ellipse, coloured by shot shape. |
-| **Bag** | Yardage book built from saved shots, carry gapping, and your Handicap Index once you have 3+ rounds logged with a course rating/slope. |
-| **Align** | Live tilt/lean/squareness from the phone's motion sensors, target-line capture, and saved setup profiles so you reproduce the same rig every time. |
-| **Guide** | Rig geometry, the error budget worst-first, a camera test that measures what your device delivers, and the flight calculator. |
+Six tabs, each a group — most hold more than one screen behind a segmented
+control at the top, so this table is one level deeper than the tab bar itself.
+
+| Tab | Screens inside | What it is |
+|---|---|---|
+| **Home** | — | Dashboard: quick actions (start a capture, start a round, import a video) plus a read-only summary of your last shot, handicap, last round and top bag yardages. |
+| **Play** | Capture, Analyze | Capture: live camera, auto-trigger on the strike, replay with a tracer. Analyze: a real frame-by-frame scrubber for ANY video — including slo-mo shot with the stock Camera app — plus a GolfTec-style skeleton overlay and straight-line drawing tools with snap-to-level/plumb. |
+| **Course** | — | GPS round tracking on a free satellite map. Auto-detects tee/green from OpenStreetMap where the course is mapped; otherwise mark the tee and pin once and it's remembered forever. |
+| **Green** | — | Lay the phone flat on the green, read the real slope with the accelerometer, get an aim point and speed guidance from an actual rolling-ball physics simulation. See below. |
+| **Stats** | Yardages, Dispersion, Rounds | Yardage book with carry gapping; a one-sigma dispersion ellipse coloured by shot shape; round history with score, GIR% and your Handicap Index once you have 3+ rounds logged with a rating/slope. |
+| **Setup** | Align, Guide | Align: live tilt/lean/squareness, target-line capture, saved setup profiles. Guide: rig geometry, the error budget worst-first, a camera test, and the flight calculator. |
 
 ## Setup & repeatability
 
@@ -254,6 +256,44 @@ No social feed, no leaderboards — those need a backend server, which this
 app does not have and was not asked to have. No licensed hazard/green-contour
 data for every course on Earth — that needs a paid provider. Both are honest
 scope cuts, not oversights.
+
+## Green: real slope, real physics, not trained feel
+
+AimPoint Express — the real technique — is a trained *feel* method: you
+straddle the line and read percentage grade through your feet against a
+calibrated internal sense. This is not that. This is a phone lying flat on
+the green, measuring the actual tilt with its accelerometer, run through a
+genuine rolling-ball physics simulation — the same RK4 approach as the
+ball-flight model, applied to a ball on an inclined plane instead of in the
+air, with a shooting-method solver finding the aim direction and speed that
+lands the ball at the hole, dying there.
+
+**Verified** (`node tools/verify-green.mjs` reproduces all of it): a flat
+green solves to exactly zero aim offset; left and right slopes mirror to
+better than a thousandth of a degree; uphill putts need more speed than
+flat, downhill need less; the solved aim/speed, re-simulated forward
+independently, lands within 0.002 inches of the hole — far under the hole's
+2.13-inch radius.
+
+**What could not be verified**: which way the accelerometer's axes actually
+point on real hardware. Reading slope *direction* (not just magnitude) from
+a phone lying flat needs a genuinely subtle sign convention, and this dev
+environment has no real accelerometer to check it against. That derivation
+was done twice, independently, specifically because the first attempt was
+wrong and got caught before shipping — but "derived carefully" is not the
+same as "confirmed on the device that will run it." So the tool ships with a
+one-tap **"reads backwards — flip it"** calibration, persisted once used. If
+a green you know well reads wrong on first try, flip it once and it's fixed
+for good — a self-correcting hardware-sign safety net, not an admission the
+physics itself is in doubt.
+
+"Play it like a flat N-footer" translates the solved speed into something a
+golfer already has a feel for, rather than an abstract number — the flat-
+green distance that needs the same speed to die there.
+
+**Honest limits, stated in the app itself**: a flat-plane model can't see
+grain, moisture, or the green's actual contour the way a trained read or a
+survey can. Treat it as a strong starting read, not gospel.
 
 ## Physics
 

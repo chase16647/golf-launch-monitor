@@ -1,7 +1,7 @@
 // sw.js — offline shell. The whole app is static, so a cache-first strategy
 // with a network fallback is all it needs. Bump CACHE when you ship changes.
 
-const CACHE = 'launchmonitor-v4';
+const CACHE = 'launchmonitor-v5';
 
 const ASSETS = [
   './',
@@ -27,6 +27,8 @@ const ASSETS = [
   './js/ui/linedraw.js',
   './js/course/gps.js',
   './js/course/coursedata.js',
+  './js/putting/greenread.js',
+  './js/ui/greenview.js',
   './js/scorecard/handicap.js',
   './js/scorecard/store.js',
   './manifest.webmanifest',
