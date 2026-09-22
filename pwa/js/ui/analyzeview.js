@@ -12,6 +12,7 @@
 // currentTime) so the scrubber/pose code below doesn't care which one is live.
 
 import { detectPose, drawSkeleton, deriveAngles, headSwayFromAddress, isPoseAvailable } from '../pose/poseOverlay.js';
+import { LineTool, displayAngle } from './linedraw.js';
 
 const q = (root, sel) => root.querySelector(sel);
 
@@ -96,12 +97,24 @@ export class AnalyzeView {
     this.addressIndex = null;
     this._poseBusy = false;
     this._poseSeq = 0;
+
+    /** @type {LineTool|null} straight reference lines drawn on the frame —
+     *  created once the canvas element exists, in mount(). Persistent across
+     *  every frame you scrub to (a plumb line marked at address is most
+     *  useful exactly because it stays put while you check how far the head
+     *  or hips drift from it through the swing) — cleared only by the Undo/
+     *  Clear controls or by loading a new clip. */
+    this.lineTool = null;
   }
 
   _q(sel) { return q(this.root, sel); }
 
   mount() {
     this.root.innerHTML = this._template();
+    this.lineTool = new LineTool(this._q('#an-canvas'), () => {
+      this._redrawCanvas();
+      this._renderLineList();
+    });
     this._bind();
     this._renderEmpty();
     isPoseAvailable().then((ok) => {
@@ -112,6 +125,7 @@ export class AnalyzeView {
 
   unmount() {
     this._alive = false;
+    this.lineTool?.destroy();
     this.source?.destroy();
   }
 
@@ -150,6 +164,27 @@ export class AnalyzeView {
           <div id="an-pose-body"></div>
         </div>
 
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h3 class="card-title" style="margin:0">Reference lines</h3>
+            <label style="display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text-2)">
+              <input type="checkbox" id="an-line-toggle">
+              Draw on the video
+            </label>
+          </div>
+          <div style="font-size:12px;color:var(--text-3);line-height:1.5;margin-bottom:10px" id="an-line-hint">
+            Drag on the video above. Get close to level or plumb and it snaps
+            in exactly straight — no need for a steady finger. Lines stay put
+            as you scrub, so a plumb line marked at address shows you exactly
+            how far the head or hips drift through the swing.
+          </div>
+          <div id="an-line-list"></div>
+          <div class="btn-row" id="an-line-controls" style="display:none">
+            <button class="btn secondary" id="an-line-undo">Undo last</button>
+            <button class="btn secondary" id="an-line-clear" style="max-width:110px">Clear</button>
+          </div>
+        </div>
+
         <div class="btn-row">
           <button class="btn secondary" id="an-close">Close</button>
         </div>
@@ -177,6 +212,20 @@ export class AnalyzeView {
     this._q('#an-pose-toggle').onchange = (e) => {
       this.poseEnabled = e.target.checked;
       this._runPoseForCurrentFrame();
+    };
+
+    this._q('#an-line-toggle').onchange = (e) => {
+      this.lineTool.enabled = e.target.checked;
+      // Only eat touch-scroll gestures on the canvas while actually drawing —
+      // otherwise a normal scroll-past-the-video touch would get swallowed.
+      this._q('#an-canvas').style.touchAction = e.target.checked ? 'none' : '';
+      this._q('#an-line-controls').style.display = e.target.checked ? 'flex' : 'none';
+      this._q('#an-line-hint').style.display = e.target.checked ? 'block' : 'none';
+    };
+    this._q('#an-line-undo').onclick = () => this.lineTool.undo();
+    this._q('#an-line-clear').onclick = () => {
+      if (this.lineTool.lines.length && !confirm('Clear all reference lines?')) return;
+      this.lineTool.clear();
     };
 
     this._loop();
@@ -258,6 +307,7 @@ export class AnalyzeView {
     this.addressLandmarks = null;
     this.addressIndex = null;
     this.currentLandmarks = null;
+    this.lineTool?.clear();
     this._q('#an-empty').hidden = true;
     this._q('#an-workspace').hidden = false;
 
@@ -283,10 +333,11 @@ export class AnalyzeView {
     if (!this.source) return;
     this.source.index = i;
     this._q('#an-scrub').value = String(i);
-    const canvas = this._q('#an-canvas');
-    await this.source.drawInto(canvas, i);
     this._q('#an-offset').innerHTML = `<span class="pill">${this.source.offsetLabel(i)}</span>`;
-    this._runPoseForCurrentFrame();
+    // _runPoseForCurrentFrame draws the frame itself (via _redrawCanvas), so
+    // there is no separate draw call here — doing it twice per frame change
+    // was wasted work with no visible difference.
+    await this._runPoseForCurrentFrame();
   }
 
   _loop() {
@@ -329,7 +380,7 @@ export class AnalyzeView {
     if (!canvas || !canvas.width) return;
 
     if (!this.poseEnabled) {
-      this._redrawPlain();
+      await this._redrawCanvas();
       this._renderPoseBody();
       return;
     }
@@ -345,27 +396,33 @@ export class AnalyzeView {
       ? ''
       : '<span class="pill warn">no pose found</span>';
 
-    this._redrawWithSkeleton();
+    await this._redrawCanvas();
     this._renderPoseBody();
   }
 
-  _redrawPlain() {
-    // Re-blit the current frame without a skeleton (used when toggled off).
-    this.source?.drawInto(this._q('#an-canvas'), this.source.index);
-  }
-
-  async _redrawWithSkeleton() {
+  /**
+   * The single place the canvas gets painted: video frame, then the pose
+   * skeleton if it's on, then reference lines on top of everything (they
+   * should always be visible over the skeleton, not hidden under it — the
+   * whole point of a plumb line is comparing it against the body).
+   */
+  async _redrawCanvas() {
     const canvas = this._q('#an-canvas');
+    if (!canvas || !this.source) return;
     const ctx = canvas.getContext('2d');
     await this.source.drawInto(canvas, this.source.index);
     const w = canvas.width, h = canvas.height;
 
-    if (this.addressLandmarks) {
-      drawSkeleton(ctx, this.addressLandmarks, { w, h, color: '#9e9ea3', alpha: 0.55, dashed: true });
+    if (this.poseEnabled) {
+      if (this.addressLandmarks) {
+        drawSkeleton(ctx, this.addressLandmarks, { w, h, color: '#9e9ea3', alpha: 0.55, dashed: true });
+      }
+      if (this.currentLandmarks) {
+        drawSkeleton(ctx, this.currentLandmarks, { w, h, color: '#5cf285', alpha: 1 });
+      }
     }
-    if (this.currentLandmarks) {
-      drawSkeleton(ctx, this.currentLandmarks, { w, h, color: '#5cf285', alpha: 1 });
-    }
+
+    this.lineTool?.draw(ctx);
   }
 
   _renderPoseBody() {
@@ -410,10 +467,45 @@ export class AnalyzeView {
       markBtn.onclick = () => {
         this.addressLandmarks = this.currentLandmarks;
         this.addressIndex = this.source.index;
-        this._redrawWithSkeleton();
+        this._redrawCanvas();
         this._renderPoseBody();
         try { navigator.vibrate?.(15); } catch { /* optional */ }
       };
     }
+  }
+
+  // ── Reference lines ─────────────────────────────────────────────────────
+
+  _renderLineList() {
+    const host = this._q('#an-line-list');
+    if (!host) return;
+    const lines = this.lineTool?.lines ?? [];
+
+    if (!lines.length) {
+      host.innerHTML = '';
+      return;
+    }
+
+    host.innerHTML = lines.map((line, i) => {
+      const deg = displayAngle(line.angleDeg);
+      const label = line.isCardinal
+        ? (Math.abs(deg) < 45 ? 'level' : 'plumb')
+        : `${deg.toFixed(1)}°`;
+      return `
+        <div class="row">
+          <span class="row-key" style="display:flex;align-items:center;gap:7px">
+            <span style="width:10px;height:10px;border-radius:50%;background:${line.color};display:inline-block"></span>
+            Line ${i + 1}${line.isCardinal ? ` — ${label}` : ''}
+          </span>
+          <span class="row-val">
+            ${line.isCardinal ? '' : `${deg > 0 ? '+' : ''}${deg.toFixed(1)}°`}
+            <button data-del="${i}" style="background:none;border:none;color:var(--danger);font-size:15px;margin-left:8px;cursor:pointer">✕</button>
+          </span>
+        </div>`;
+    }).join('');
+
+    host.querySelectorAll('[data-del]').forEach((b) => {
+      b.onclick = () => this.lineTool.removeAt(Number(b.dataset.del));
+    });
   }
 }

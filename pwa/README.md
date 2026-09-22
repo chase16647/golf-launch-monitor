@@ -172,6 +172,33 @@ own address position, not as an absolute number. Confidence also drops hard
 through the downswing — motion blur at swing speed degrades keypoint
 detection exactly when you most want it.
 
+### Reference lines — draw and snap perfectly straight
+
+The other half of a coaching overlay: drag a straight line onto the paused
+frame — a plumb line down the spine, a level line at ball height, a shaft-
+plane line at address. Get close to level or plumb and it **snaps in exactly
+straight**, correcting for a shaky finger.
+
+This is not cosmetic labelling — a "straight line" that reads 2° off is worse
+than no line at all, because it looks authoritative while being wrong. On a
+snap, the line's actual pixels are recomputed from the snapped angle and the
+drag length, not just relabelled: `node tools/verify-snap.mjs` reproduces the
+check that a near-level drag reconstructs to a line measuring *exactly*
+0.000000°, not "close to zero." A real bug was caught this way during
+development — the original snap logic rounded to the nearest 15° grid step
+before checking whether that step was level/plumb, which made the wider
+"easy to snap" catch radius unreachable past 7.5° off-axis. Fixed by checking
+the four cardinal directions independently, before falling through to the
+general grid; `test/linedraw.test.mjs` pins the exact case that broke.
+
+Level and plumb lines automatically extend to the full width/height of the
+frame — that's how a ground or plumb reference is actually used, as a guide
+spanning the whole image, not a short drawn segment. Lines persist as you
+scrub through every frame of the clip, which is the point: mark a plumb line
+at address and watch exactly how far the head or hips drift from it through
+the swing. Multiple lines, each a different colour, with per-line delete plus
+undo/clear-all.
+
 **Verified working**: the model fetch returns a real 200 from Google's model
 CDN, the WASM pipeline runs without throwing, and it correctly reports "no
 pose found" on a synthetic test image with no person in it rather than
